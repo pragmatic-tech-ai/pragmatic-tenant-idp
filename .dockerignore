@@ -7,3 +7,6 @@
 **/dist
 **/*.tsbuildinfo
 test-results
+# Dev runs (tsx) write the IdP's keys and secrets into a data folder beside the sources: never in the build context.
+data
+**/data
