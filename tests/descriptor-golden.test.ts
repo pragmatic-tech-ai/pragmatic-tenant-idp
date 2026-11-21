@@ -19,8 +19,8 @@ class DescriptorGoldenFixture
     /** pragmatic-server's pin (src/idp/tests/tenant-idp-component.test.ts and admin/control-plane/descriptors/digests.json). */
     public static readonly Digest = 'sha256:95021d7f98dcf5820ba1fe8a860cb76485a3d618fb77bff464174c4840227a67';
     public static readonly Golden = join(DescriptorGoldenFixture.Here, '..', 'src', 'tests', 'fixtures', 'pragmatic-tenant-idp.component.json');
-    public static readonly PackageJson = join(DescriptorGoldenFixture.Here, '..', 'package.json');
-    public static readonly Utf8 = 'utf8';
+    private static readonly PackageJson = join(DescriptorGoldenFixture.Here, '..', 'package.json');
+    private static readonly Utf8 = 'utf8';
 
     public static PackageVersion(): string
     {

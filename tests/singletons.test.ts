@@ -79,6 +79,8 @@ class SingletonsFixture
         '@pragmatic-tech-ai/todl',
         '@pragmatic-tech-ai/mural',
     ];
+    public static readonly CopiesSeparator = ': ';
+    public static readonly TitlePrefix = 'one installed copy of ';
 }
 
 describe('engine singletons', () =>
@@ -86,9 +88,9 @@ describe('engine singletons', () =>
     const copies = new InstalledCopies(SingletonsFixture.Root);
     for (const name of SingletonsFixture.Singletons)
     {
-        it('one installed copy of ' + name, () =>
+        it(SingletonsFixture.TitlePrefix + name, () =>
         {
-            assert.equal(copies.Of(name).length, 1, name + ': ' + JSON.stringify(copies.Of(name)));
+            assert.equal(copies.Of(name).length, 1, name + SingletonsFixture.CopiesSeparator + JSON.stringify(copies.Of(name)));
         });
     }
 });

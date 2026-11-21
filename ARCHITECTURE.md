@@ -1,11 +1,9 @@
 # pragmatic-tenant-idp — Architecture Index
 
-The realm sign-in service, the OIDC provider of the realms (stage B step 2; plan
-`dev-kit/docs/superpowers/plans/2026-11-20-b2-realm-sign-in-service.md`), split out of pragmatic-server (dev-kit A3,
-`plans/2026-11-20-a3-repo-split.md`): pragmatic-server's `src/idp/` is this repository's `src/`, its
-`src/bin/pragmatic-idpd.ts` is `src/bin/`, and its `idp-login/` is `idp-login/`. One container serves one or more
-realms on `pragmatic-app-host`; every record lives in its own Postgres; signing key, master key, TLS and admin tokens
-are secret files in the data folder.
+The realm sign-in service, the OIDC provider of the realms, split out of pragmatic-server: pragmatic-server's
+`src/idp/` is this repository's `src/`, its `src/bin/pragmatic-idpd.ts` is `src/bin/`, and its `idp-login/` is
+`idp-login/`. One container serves one or more realms on `pragmatic-app-host`; every record lives in its own Postgres;
+signing key, master key, TLS and admin tokens are secret files in the data folder.
 
 ## Entry point and image
 
@@ -22,6 +20,10 @@ are secret files in the data folder.
   keeps it in step with what the entry reaches.
 - The descriptor: `TenantIdpComponent` (`src/tenant-idp-component.ts`), exported for the image build as `Components`
   by `src/release-components.ts`; `tests/descriptor-golden.test.ts` pins its digest to pragmatic-server's golden.
+  `dist/release-components.js` is read only by the image's component stages; it rides along in the runtime `dist`
+  unused (nothing at runtime imports it; the rendered Dockerfile copies the whole `dist`).
+- esbuild is a dev dependency at TODL's own range (`^0.24.2`): TODL loads it at module load without declaring it, and
+  without the pin the hoisted copy would be tsx's newer one.
 
 ## Composition
 

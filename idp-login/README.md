@@ -40,7 +40,7 @@ The IdP daemon refuses to start unless the app is built. It looks in `idp-login/
 The Identity Platform client is the published `@pragmatic-tech-ai/pragmatic-identity-source-identity-platform` (GitHub Packages, see `.npmrc`); only its dependency-free `./client` entry is bundled.
 
 ```
-npm --prefix idp-login install
+npm --prefix idp-login ci
 npm --prefix idp-login run build      # compiles login.mu, then bundles into dist/
 npm --prefix idp-login test           # unit tests (view model, config, backend, Identity Platform federation, round trip)
 npm --prefix idp-login run test:e2e   # the built app against a fake sign-in service (needs a build and `npx playwright install chromium`)
