@@ -38,8 +38,8 @@ export class IdpLoginPage
         ['.svg', 'image/svg+xml'],
         ['.png', 'image/png'],
     ]);
-    // idp-login/dist relative to this module: src/idp (tsx) and dist/idp (compiled) sit at the same depth.
-    private static readonly DefaultRootSegments = ['..', '..', 'idp-login', 'dist'];
+    // idp-login/dist relative to this module: src (tsx) and dist (compiled) sit at the same depth.
+    private static readonly DefaultRootSegments = ['..', 'idp-login', 'dist'];
 
     private constructor(private readonly index: string, private readonly assets: ReadonlyMap<string, IdpLoginAsset>)
     {

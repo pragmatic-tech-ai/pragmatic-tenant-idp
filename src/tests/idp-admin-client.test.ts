@@ -8,9 +8,9 @@ import * as https from 'node:https';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { DevCa, IdpTlsMaterial } from '@pragmatic-tech-ai/pragmatic-identity-source-oidc';
-import type { IdpRealmSet } from '../../../src/idp/idp-realm-set.js';
-import type { SqlIdpClientStore } from '../../../src/idp/sql-idp-client-store.js';
-import { TenantIdpTestHost } from '../../../src/idp/tests/tenant-idp-test-host.js';
+import type { IdpRealmSet } from '../idp-realm-set.js';
+import type { SqlIdpClientStore } from '../sql-idp-client-store.js';
+import { TenantIdpTestHost } from './tenant-idp-test-host.js';
 import { IdpAdminClient, IdpAdminError, IdpAdminTransportError } from '@pragmatic-tech-ai/pragmatic-tenant-plane';
 
 class ClientFixture

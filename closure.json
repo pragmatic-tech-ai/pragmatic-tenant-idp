@@ -1,0 +1,12 @@
+{
+  "pragmatic-tenant-idp": {
+    "entrypoint": ["node", "dist/bin/pragmatic-idpd.js"],
+    "packages": [],
+    "files": [
+      "pragmatic-tenant-idp/package.json",
+      "pragmatic-tenant-idp/node_modules",
+      "pragmatic-tenant-idp/dist",
+      "pragmatic-tenant-idp/idp-login/dist"
+    ]
+  }
+}

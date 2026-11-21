@@ -89,7 +89,7 @@ describe('end to end: a relying party signs in through the realm sign-in service
         assert.deepEqual(outcome.Result.Claims.Values('roles'), ['admin']);
         assert.deepEqual(outcome.Result.Claims.Values('app_roles'), ['finance']);
         assert.equal(outcome.Result.Claims.First('email'), F.Email);
-        const refreshToken = outcome.Tokens.RefreshToken;
+        const refreshToken = outcome.Tokens!.RefreshToken;
         assert.notEqual(refreshToken, null, 'a confidential client gets a refresh token');
         const refreshed = await rp.Refresh(client, refreshToken!, F.PrincipalId);
         assert.notEqual(refreshed, null);
@@ -115,7 +115,7 @@ describe('end to end: a relying party signs in through the realm sign-in service
         const accountId = outcome.Result.Subject;
         assert.deepEqual(outcome.Result.Claims.Values('app_roles'), []);
         await host.Admin('POST', F.Central + '/role-mappings', { role: 'ledger:viewer', member: { kind: 'account', value: accountId } });
-        const refreshed = await rp.Refresh(client, outcome.Tokens.RefreshToken!, accountId);
+        const refreshed = await rp.Refresh(client, outcome.Tokens!.RefreshToken!, accountId);
         assert.notEqual(refreshed, null);
         const payload = JSON.parse(Buffer.from(refreshed!.IdToken.split('.')[1], 'base64url').toString('utf8'));
         assert.deepEqual(payload.app_roles, { ledger: ['viewer'] }, 'the refresh follows the new mapping');

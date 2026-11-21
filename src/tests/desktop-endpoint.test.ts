@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import { AppHost, AppHostConfig, OidcLoginError, OidcRelyingParty, RouteTable, SessionClaims, SessionStore, SignedInIdentity, type IOidcClientConfig } from '@pragmatic-tech-ai/pragmatic-app-host'
 import { InMemoryOidcFlowStateStore } from '@pragmatic-tech-ai/pragmatic-identity-source-oidc'
 import { type IEnvironmentService, EnvStatus, EnvType, Template, type EnvironmentRecord, type HiveRecord, type TenantRecord, TenantAdminCapabilities, type ITenantDirectory, TenantProfileMapper, DesktopAuthGate, DesktopEndpoint, DesktopSignInFlows, DesktopTargets, TenantOidcClientKind, TenantOidcClients, type ITenantOidcClients, TenantSessionGate, TenantSessionClaims, TenantSessionKind, TenantSessions } from '@pragmatic-tech-ai/pragmatic-tenant-plane'
-import { OidcClient } from '../../../src/idp/sql-idp-client-store.js'
+import { OidcClient } from '../sql-idp-client-store.js'
 
 type Reply = { status: number; body: Record<string, unknown> | undefined; text: string; headers: IncomingHttpHeaders }
 

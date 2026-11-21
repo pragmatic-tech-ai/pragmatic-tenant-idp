@@ -1,6 +1,6 @@
 # IdP sign-in app
 
-The sign-in page of the realm sign-in service (`src/idp`, run as `pragmatic-idpd` on pragmatic-app-host), built in Mural markup like the admin portals. Its screen is `src/login.mu` and its view model is `src/idp-login-view-model.ts`.
+The sign-in page of the realm sign-in service (this repository's `src`, run as `pragmatic-idpd` on pragmatic-app-host), built in Mural markup like the admin portals. Its screen is `src/login.mu` and its view model is `src/idp-login-view-model.ts`.
 
 ## Contract with the realm sign-in service
 
@@ -35,9 +35,9 @@ The federated calls are the shared client's (`IdentityPlatformRestClient.CreateA
 
 ## Building
 
-The IdP daemon refuses to start unless the app is built. It looks in `idp-login/dist` beside the package, or in `PRAGMATIC_IDP_LOGIN_DIR` when that is set. The container image builds it (`docker/Dockerfile`). Hosts composed in-process without it (tests, the SSO smoke) get a placeholder page that carries the same marker but cannot sign anyone in.
+The IdP daemon refuses to start unless the app is built. It looks in `idp-login/dist` beside the package, or in `PRAGMATIC_IDP_LOGIN_DIR` when that is set. The container image builds it (the repository's `Dockerfile`). Hosts composed in-process without it (tests, the SSO smoke) get a placeholder page that carries the same marker but cannot sign anyone in.
 
-The Identity Platform client comes from the pragmatic-shared workspace (`file:../../pragmatic-shared/packages/pragmatic-identity-source-identity-platform`); only its dependency-free `./client` entry is bundled, and its `dist` must be built.
+The Identity Platform client is the published `@pragmatic-tech-ai/pragmatic-identity-source-identity-platform` (GitHub Packages, see `.npmrc`); only its dependency-free `./client` entry is bundled.
 
 ```
 npm --prefix idp-login install

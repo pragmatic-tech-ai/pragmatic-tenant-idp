@@ -12,9 +12,9 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@pragmatic-tech-ai/mural": "file:../../Mural",
-    "@pragmatic-tech-ai/pragmatic-identity-source-identity-platform": "file:../../pragmatic-shared/packages/pragmatic-identity-source-identity-platform",
-    "@pragmatic-tech-ai/todl-runtime": "file:../../todl-runtime"
+    "@pragmatic-tech-ai/mural": "^0.67.2",
+    "@pragmatic-tech-ai/pragmatic-identity-source-identity-platform": "^0.17.2",
+    "@pragmatic-tech-ai/todl-runtime": "^0.7.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",

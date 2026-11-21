@@ -3,8 +3,8 @@ import { describe, it } from 'node:test'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TenantIdpComponent } from '../tenant-idp-component.js'
-import { ComponentGolden } from '../../component/tests/component-golden.js'
-import { ComponentSources } from '../../component/tests/component-sources.js'
+import { ComponentGolden } from './component-golden.js'
+import { ComponentSources } from './component-sources.js'
 
 class TenantIdpComponentFixture
 {
