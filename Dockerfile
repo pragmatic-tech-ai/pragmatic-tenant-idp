@@ -53,14 +53,8 @@ RUN [ "sha256:$(sha256sum /component/component.json | cut -d ' ' -f 1)" = "$COMP
 
 # Production dependencies only; source maps and build info dropped.
 FROM compile AS build
-# Kept across the prune: esbuild @esbuild typescript, dev dependencies the runtime imports (TODL loads esbuild and typescript at
-# module load), stashed before it and restored after it.
-RUN set -e; mkdir /runtime-dev-stash; \
-    for pkg in esbuild @esbuild typescript; do cp -a "node_modules/$pkg" "/runtime-dev-stash/$pkg"; done; \
-    npm prune --omit=dev --no-audit --no-fund; \
-    for pkg in esbuild @esbuild typescript; do rm -rf "node_modules/$pkg"; cp -a "/runtime-dev-stash/$pkg" "node_modules/$pkg"; done; \
-    rm -rf /runtime-dev-stash; \
-    find . -type f \( -name '*.map' -o -name '*.tsbuildinfo' \) -delete
+RUN npm prune --omit=dev --no-audit --no-fund \
+    && find . -type f \( -name '*.map' -o -name '*.tsbuildinfo' \) -delete
 
 FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS runtime
 ENV NODE_ENV=production
