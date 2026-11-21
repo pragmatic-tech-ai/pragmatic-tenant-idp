@@ -58,16 +58,20 @@ RUN npm prune --omit=dev --no-audit --no-fund \
 
 FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS runtime
 ENV NODE_ENV=production
-# uid and gid are both 10001, so the --chown=10001:10001 copies below never leave files under an orphan group.
+# The service runs as 10001 (uid and gid); the app tree is root's and read-only to it, but for the directories the render
+# option WritableDirs names.
 RUN groupadd --system --gid 10001 pragmatic && useradd --system --create-home --uid 10001 --gid 10001 pragmatic
 WORKDIR /workspace/pragmatic-tenant-idp
 
 FROM runtime AS pragmatic-tenant-idp
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
-COPY --from=build --chown=10001:10001 /workspace/pragmatic-tenant-idp/package.json /workspace/pragmatic-tenant-idp/package.json
-COPY --from=build --chown=10001:10001 /workspace/pragmatic-tenant-idp/node_modules /workspace/pragmatic-tenant-idp/node_modules
-COPY --from=build --chown=10001:10001 /workspace/pragmatic-tenant-idp/dist /workspace/pragmatic-tenant-idp/dist
-COPY --from=build --chown=10001:10001 /workspace/pragmatic-tenant-idp/idp-login/dist /workspace/pragmatic-tenant-idp/idp-login/dist
+COPY --from=build /workspace/pragmatic-tenant-idp/package.json /workspace/pragmatic-tenant-idp/package.json
+COPY --from=build /workspace/pragmatic-tenant-idp/node_modules /workspace/pragmatic-tenant-idp/node_modules
+COPY --from=build /workspace/pragmatic-tenant-idp/dist /workspace/pragmatic-tenant-idp/dist
+COPY --from=build /workspace/pragmatic-tenant-idp/idp-login/dist /workspace/pragmatic-tenant-idp/idp-login/dist
+# The directories the service writes inside its tree (render option WritableDirs): created when missing, owned by the
+# service user; what was copied into them, and everything else, stays root's.
+RUN mkdir -p /workspace/pragmatic-tenant-idp/dist/data && chown 10001:10001 /workspace/pragmatic-tenant-idp/dist/data
 ARG COMPONENT_DIGEST
 COPY --from=component /component/component.json /pragmatic/component.json
 LABEL ai.pragmatic-tech.component.digest=$COMPONENT_DIGEST

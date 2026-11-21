@@ -3,42 +3,46 @@
   "version": "0.1.0",
   "private": true,
   "description": "The realm sign-in service (pragmatic-tenant-idp): an OpenID provider per realm with its own Postgres, its sign-in app (idp-login) and its container image.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pragmatic-tech-ai/pragmatic-tenant-idp.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.5"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "tsx --test \"src/**/*.test.ts\" \"tests/*.test.ts\"",
+    "test": "tsx --test \"src/**/*.test.ts\" \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tests/tsconfig.json"
   },
   "dependencies": {
-    "@pragmatic-tech-ai/pragmatic-app-host": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-component": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-configuration": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity-realm": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity-source-entra": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity-source-google": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity-source-identity-platform": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity-source-local": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity-source-oidc": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity-source-pragmatic": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-identity-store": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-realm-adapters": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-realm-custom": "^0.17.6",
+    "@pragmatic-tech-ai/pragmatic-app-host": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-component": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-configuration": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity-realm": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity-source-entra": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity-source-google": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity-source-identity-platform": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity-source-local": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity-source-oidc": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity-source-pragmatic": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-identity-store": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-realm-adapters": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-realm-custom": "^0.17.7",
     "@pragmatic-tech-ai/todl": "^0.66.5",
-    "@pragmatic-tech-ai/todl-runtime": "^0.7.0",
+    "@pragmatic-tech-ai/todl-runtime": "^0.7.1",
     "jose": "^6.0.0"
   },
   "devDependencies": {
-    "@pragmatic-tech-ai/pragmatic-release-toolkit": "^0.17.6",
-    "@pragmatic-tech-ai/pragmatic-tenant-plane": "^0.17.6",
+    "@pragmatic-tech-ai/pragmatic-release-toolkit": "^0.17.7",
+    "@pragmatic-tech-ai/pragmatic-tenant-plane": "^0.17.7",
     "@types/node": "^22.20.1",
-    "esbuild": "^0.24.2",
     "pg-mem": "^3.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.5.0"
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0"
   },
   "pragmaticClosureCheck": {
     "Manifest": "closure.json",
@@ -52,6 +56,9 @@
     "Entry": "src/bin/pragmatic-idpd.ts",
     "UiDirs": [
       "idp-login"
+    ],
+    "WritableDirs": [
+      "dist/data"
     ]
   }
 }

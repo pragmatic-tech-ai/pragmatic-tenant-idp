@@ -14,7 +14,7 @@ signing key, master key, TLS and admin tokens are secret files in the data folde
   `@pragmatic-tech-ai/pragmatic-release-toolkit`) is multi-arch (linux/amd64 + linux/arm64), installs every package
   from GitHub Packages through the lock, builds `idp-login` and copies its `dist` beside the compiled `dist`
   (`IdpLoginPage` resolves `../idp-login/dist` from its module), keeps esbuild and typescript across the prune (TODL
-  loads them at module load), installs `openssl` (the CA tooling) and carries its component descriptor at
+  declares both as runtime dependencies from 0.66.4 on), installs `openssl` (the CA tooling) and carries its component descriptor at
   `/pragmatic/component.json` with the digest as the label `ai.pragmatic-tech.component.digest`.
 - `closure.json` lists what the image copies; `npx pragmatic-closure-check` (package.json `pragmaticClosureCheck`)
   keeps it in step with what the entry reaches.
@@ -22,8 +22,6 @@ signing key, master key, TLS and admin tokens are secret files in the data folde
   by `src/release-components.ts`; `tests/descriptor-golden.test.ts` pins its digest to pragmatic-server's golden.
   `dist/release-components.js` is read only by the image's component stages; it rides along in the runtime `dist`
   unused (nothing at runtime imports it; the rendered Dockerfile copies the whole `dist`).
-- esbuild is a dev dependency at TODL's own range (`^0.24.2`): TODL loads it at module load without declaring it, and
-  without the pin the hoisted copy would be tsx's newer one.
 
 ## Composition
 
