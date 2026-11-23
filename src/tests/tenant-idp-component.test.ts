@@ -10,7 +10,7 @@ class TenantIdpComponentFixture
 {
     public static readonly Here = dirname(fileURLToPath(import.meta.url))
     public static readonly Golden = join(TenantIdpComponentFixture.Here, 'fixtures', 'pragmatic-tenant-idp.component.json')
-    public static readonly Digest = 'sha256:3db1e7e13d855ee866da22f8112cd3d716eab3f8f9a29ef14fbac7ea27b77fcc'
+    public static readonly Digest = 'sha256:4c39a7afc1797f92594312fdfeeab6b834b544df5039b068f4e12b997b1cb578'
     public static readonly Readers = [['..', 'idp-main.ts'], ['..', 'tenant-idp-database.ts']].map(path => join(TenantIdpComponentFixture.Here, ...path))
     /** The file variable the start step sets for the secret setting adminToken (source PRAGMATIC_IDP_ADMIN_TOKEN_REF). */
     public static readonly Undeclared: readonly string[] = ['PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE', 'PRAGMATIC_IDP_DATABASE_URL_FILE']
