@@ -7,12 +7,15 @@ import type { IdpRealm } from './idp-realm.js';
 import type { IdpRealmSet } from './idp-realm-set.js';
 import { IdpSsoCookie } from './idp-sso-cookie.js';
 import { IdpBrokerBinding } from './idp-broker-binding.js';
+import { LoginNotice, LoginNoticeReason } from './login-notice.js';
 import { RealmIssuer } from '@pragmatic-tech-ai/pragmatic-identity';
 import { RealmSignIn } from './realm-sign-in.js';
 import { SignInCompletion, type SignInRedirect } from './sign-in-completion.js';
+import { SignInFailurePage } from './sign-in-failure-page.js';
 import type { SqlIdpClientStore } from './sql-idp-client-store.js';
 import type { SqlSsoSessionStore, SsoSession } from './sql-sso-session-store.js';
 import { RealmSourceKind } from './tenant-idp-options.js';
+import { UpstreamRefusal, UpstreamRefusalReason, type UpstreamOidcSource } from './upstream-oidc-source.js';
 
 /** The ways the login page signs a person in (the `method` of its JSON post). */
 export enum LoginMethod
@@ -30,7 +33,10 @@ export enum LoginMethod
  *   idToken }`; answers `{ redirect }` and sets the SSO cookie, or an error the page shows.
  * - `GET <issuer>/login/config`: what the page offers (local accounts, upstream buttons, the Identity Platform config,
  *   sign-up).
- * - `GET <issuer>/broker/<source>/login?<request>` and `.../callback`: an upstream source's round trip.
+ * - `GET <issuer>/broker/<source>/login?<request>` and `.../callback`: an upstream source's round trip. A callback that
+ *   signs nobody in sends the browser back to the authorize request it was begun for, with a notice marker the page
+ *   shows a fixed message for (`LoginNotice`); one that cannot be tied to such a request answers a small HTML page
+ *   (`SignInFailurePage`), 401. Neither is JSON: the callback is a browser navigation.
  */
 export class SignInEndpoints
 {
@@ -49,7 +55,6 @@ export class SignInEndpoints
     private static readonly EmailNotVerified = 'email_not_verified';
     private static readonly TooManyAttempts = 'too_many_attempts';
     private static readonly LoginRequired = 'login_required';
-    private static readonly UpstreamFailed = 'upstream_sign_in_failed';
     private static readonly UnknownSource = 'unknown_source';
     private static readonly UnknownRealm = 'unknown_realm';
     private static readonly ParamPrefix = ':';
@@ -75,6 +80,7 @@ export class SignInEndpoints
     private static readonly StatusTooMany = 429;
     private static readonly LoginBodyLimit = 32 * 1024;
     private static readonly NoName = '';
+    private static readonly NoValue = '';
 
     public constructor(
         private readonly realms: IdpRealmSet,
@@ -102,7 +108,8 @@ export class SignInEndpoints
     private async Authorize(ctx: RequestContext): Promise<void>
     {
         const realm = this.RealmOf(ctx);
-        const request = await AuthorizeRequest.Validate(realm, this.clients, ctx.Query.toString());
+        const query = ctx.Query.toString();
+        const request = await AuthorizeRequest.Validate(realm, this.clients, query);
         if (request instanceof AuthorizeRefusal || realm === undefined)
         {
             this.Refuse(ctx, request as AuthorizeRefusal);
@@ -122,7 +129,8 @@ export class SignInEndpoints
             this.RedirectTo(ctx, SignInCompletion.ErrorRedirect(request, SignInEndpoints.LoginRequired));
             return;
         }
-        this.WritePage(ctx, false);
+        const notice = LoginNotice.FromQuery(query)?.Within(source => realm.Upstream(source) !== undefined);
+        this.WritePage(ctx, false, notice);
     }
 
     private async Login(ctx: RequestContext): Promise<void>
@@ -268,8 +276,8 @@ export class SignInEndpoints
         const source = realm?.Upstream(ctx.Param(S.SourceParam));
         const code = ctx.Query.get(S.CodeParam);
         const state = ctx.Query.get(S.StateParam);
-        const upstream = realm === undefined || source === undefined || code === null || state === null ? undefined : await source.Complete(code, state);
-        const carried = upstream === undefined ? undefined : IdpBrokerBinding.Parse(upstream.AuthorizeRequest);
+        const upstream = realm === undefined || source === undefined || state === null || state === S.NoValue ? undefined : await source.Complete(code === null || code === S.NoValue ? undefined : code, state);
+        const carried = upstream?.AuthorizeRequest === undefined ? undefined : IdpBrokerBinding.Parse(upstream.AuthorizeRequest);
         const bound = carried !== undefined && IdpBrokerBinding.Admits(ctx.Request.headers.cookie, carried);
         const request = carried === undefined || !bound ? undefined : await AuthorizeRequest.Validate(realm, this.clients, carried.AuthorizeRequest);
         if (realm !== undefined)
@@ -278,14 +286,19 @@ export class SignInEndpoints
         }
         if (realm === undefined || source === undefined || upstream === undefined || !(request instanceof AuthorizeRequest))
         {
-            ctx.WriteJson(S.StatusUnauthorized, { [S.ErrorField]: S.UpstreamFailed });
+            this.WriteFailurePage(ctx);
+            return;
+        }
+        if (upstream instanceof UpstreamRefusal)
+        {
+            this.ReturnToPage(ctx, realm, request, source, upstream.Reason === UpstreamRefusalReason.WrongDomain ? LoginNoticeReason.Domain : LoginNoticeReason.Incomplete);
             return;
         }
         const subject = upstream.Principal.Id;
         const accountId = await realm.LinkUpstream(source.Id, subject, upstream.Email, upstream.Name);
         if (!(await realm.IsActive(accountId)))
         {
-            ctx.WriteJson(S.StatusUnauthorized, { [S.ErrorField]: S.UpstreamFailed });
+            this.ReturnToPage(ctx, realm, request, source, LoginNoticeReason.Inactive);
             return;
         }
         const signIn = new RealmSignIn(accountId, source.Id, subject, upstream.Principal.Groups, upstream.Email, upstream.Name, undefined, this.now());
@@ -295,6 +308,20 @@ export class SignInEndpoints
             ctx.Response.appendHeader(S.SetCookieHeader, redirect.SetCookie);
         }
         this.RedirectTo(ctx, redirect.Location);
+    }
+
+    /** Back to the realm's sign-in page for the original request, flagged with why the source signed nobody in. */
+    private ReturnToPage(ctx: RequestContext, realm: IdpRealm, request: AuthorizeRequest, source: UpstreamOidcSource, reason: LoginNoticeReason): void
+    {
+        const query = new LoginNotice(reason, source.Id).AppendTo(request.Query);
+        this.RedirectTo(ctx, new URL(realm.Issuer).pathname + RealmIssuer.AuthorizePath + SignInEndpoints.QueryMark + query);
+    }
+
+    private WriteFailurePage(ctx: RequestContext): void
+    {
+        const S = SignInEndpoints;
+        ctx.Response.writeHead(S.StatusUnauthorized, { [S.ContentTypeHeader]: S.HtmlType, [S.CacheControlHeader]: S.NoStore });
+        ctx.Response.end(SignInFailurePage.Render());
     }
 
     private RealmOf(ctx: RequestContext): IdpRealm | undefined
@@ -342,11 +369,11 @@ export class SignInEndpoints
         ctx.Response.end();
     }
 
-    private WritePage(ctx: RequestContext, failed: boolean): void
+    private WritePage(ctx: RequestContext, failed: boolean, notice?: LoginNotice): void
     {
         const S = SignInEndpoints;
         ctx.Response.writeHead(S.StatusOk, { [S.ContentTypeHeader]: S.HtmlType, [S.CacheControlHeader]: S.NoStore });
-        ctx.Response.end(this.loginPage.Render(failed));
+        ctx.Response.end(notice === undefined ? this.loginPage.Render(failed) : this.loginPage.RenderNotice(notice));
     }
 
     /** The broker login path of a source under the issuer (the login page appends the request). */
@@ -368,6 +395,7 @@ export class LoginConfig
     private static readonly KindField = 'kind';
     private static readonly LabelField = 'label';
     private static readonly LoginField = 'login';
+    private static readonly HostedDomainField = 'hostedDomain';
     private static readonly IdentityPlatformField = 'identityPlatform';
     private static readonly SignUpField = 'signUp';
 
@@ -389,6 +417,7 @@ export class LoginConfig
                 [L.KindField]: source.Settings.Kind,
                 [L.LabelField]: source.Label,
                 [L.LoginField]: SignInEndpoints.BrokerLoginPath(issuerPath, source.Id),
+                [L.HostedDomainField]: source.HostedDomain ?? L.NoPage,
             })),
             [L.IdentityPlatformField]: realm.IdentityPlatform === undefined ? L.NoPage : realm.IdentityPlatform.PageConfig().ToJson(),
             [L.SignUpField]: realm.Settings.OffersSignUp,

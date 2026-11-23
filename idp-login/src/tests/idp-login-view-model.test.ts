@@ -5,6 +5,7 @@ import { IdentityPlatformProvider } from '@pragmatic-tech-ai/pragmatic-identity-
 import { FederatedRoundTrip, PendingFederatedSignIn } from '../federated-round-trip.js'
 import { LoginMode } from '../idp-login-view-model.js'
 import { LoginAnswer } from '../login-backend.js'
+import { LoginNotice, LoginNoticeReason } from '../login-boot-state.js'
 import { LoginSource } from '../login-config.js'
 import { FakeBackend, LoginFixture, MemoryStorage } from './login-fakes.js'
 
@@ -347,5 +348,56 @@ describe('IdP sign-in page: Identity Platform', () =>
         await fixture.Page.Load()
         assert.equal(fixture.Ip.Calls.length, 0)
         assert.equal(storage.Items.size, 0)
+    })
+})
+
+describe('IdP sign-in page: the banner after an upstream source sent the person back', () =>
+{
+    const GoogleSource = LoginFixture.StaffGoogle
+
+    it('names the hosted domain for an account of another domain', async () =>
+    {
+        const fixture = await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Domain, 'google'))
+        assert.equal(fixture.Page.BannerText, 'Only pragmatic-tech.ai accounts can sign in here. Choose another account.')
+        assert.equal(fixture.Page.ErrorText, '')
+    })
+
+    it('says the account cannot sign in here without a domain, and for an inactive account', async () =>
+    {
+        const noDomain = new LoginSource('google', 'google', 'Google', '/realms/staff/broker/google/login?')
+        const generic = "This account can't sign in here. Choose another account."
+        assert.equal((await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Domain, 'google'), [noDomain])).Page.BannerText, generic)
+        assert.equal((await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Domain, undefined))).Page.BannerText, generic)
+        assert.equal((await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Inactive, 'google'))).Page.BannerText, generic)
+    })
+
+    it('names the source when its round trip did not complete', async () =>
+    {
+        assert.equal((await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Incomplete, 'google'))).Page.BannerText, "Sign-in with Google didn't complete. Try again.")
+        assert.equal((await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Incomplete, 'not-a-source'))).Page.BannerText, "Sign-in didn't complete. Try again.", 'a source the config does not list is no source')
+    })
+
+    it('shows only its own messages, whatever the source id says', async () =>
+    {
+        const fixture = await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Incomplete, '<b>Click here</b>'))
+        assert.equal(fixture.Page.BannerText, "Sign-in didn't complete. Try again.")
+    })
+
+    it('drops the marker from the broker links and the posts, and clears the banner once the person acts', async () =>
+    {
+        const fixture = await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Domain, 'google'))
+        fixture.Page.Sources.ToArray()[0]!.SignInCommand.Execute()
+        assert.deepEqual(fixture.Navigator.Visits, ['/realms/staff/broker/google/login?' + LoginFixture.Request])
+        fixture.Page.Email = 'grace@pragmatic-tech.ai'
+        fixture.Page.Password = 'a password'
+        await fixture.Page.SignIn()
+        assert.equal(fixture.Backend.Posts[0]!.request, LoginFixture.Request)
+        assert.equal(fixture.Page.BannerText, '')
+    })
+
+    it('a page without a notice shows no banner', async () =>
+    {
+        const fixture = await LoginFixture.Loaded(LoginFixture.Local([GoogleSource]))
+        assert.equal(fixture.Page.BannerText, '')
     })
 })

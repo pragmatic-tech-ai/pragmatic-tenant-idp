@@ -9,8 +9,10 @@
 // - Continue with Google through Identity Platform;
 // - the email form: sign in, and for Identity Platform also Create an account
 //   (sign-up mode) and Forgot password (reset mode);
-// - an error line, a notice line, and Resend verification email after an
-//   unverified-email refusal.
+// - a banner when an upstream source sent the person back ("Only <domain>
+//   accounts can sign in here. Choose another account."), an error line, a
+//   notice line, and Resend verification email after an unverified-email
+//   refusal.
 // The boxes edit through real browser inputs (UsesNativeInput): IME, password
 // managers (InputPurpose sets the autocomplete tokens), mobile keyboards and
 // screen readers all work. Text still binds TwoWay onto the page.
@@ -55,6 +57,11 @@ Application [ Theme = Pragmatic, Scheme = PragmaticDark ] {
                     TextBlock [ Text = $DisplayName, Style = @UiCaption, Foreground = @Fg2, Margin = (0,2,0,0),
                                 Visibility = $DisplayName << ToVisibility ]
                     TextBlock [ Text = $Subtitle, Style = @Body, Foreground = @Fg2, TextWrapping = Wrap, Margin = (0,4,0,16) ]
+
+                    Border [ Fill = @StateDangerSoft, Stroke = Pen [ Brush = @StateDanger ], Padding = (12,8,12,8), Margin = (0,0,0,16),
+                             Visibility = $BannerText << ToVisibility ] {
+                        TextBlock [ Text = $BannerText, Style = @Body, Foreground = @StateDangerInk, TextWrapping = Wrap ]
+                    }
 
                     TextBlock [ Text = "Loading...", Style = @UiCaption, Foreground = @Fg2, Margin = (0,0,0,12),
                                 Visibility = $IsLoading << ToVisibility ]

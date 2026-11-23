@@ -38,7 +38,9 @@ routes; in a hive the host serves TLS itself (`AppHostConfig.Tls`, the `IdpTlsId
   `/_admin/realms/<realm>/...`; sign-in app assets `/_login/`.
 - **Realms and sources.** `RealmSettings` (`realm-settings.ts`) from a realm's configuration (descriptor
   `TenantIdpComponent`, option names in `TenantIdpOptions`): `TokenPolicy`, `LocalPolicy`, `UpstreamSourceSettings`
-  (Google / Entra / generic OIDC / Pragmatic -> `UpstreamOidcSource`) and `IdentityPlatformSourceSettings` (->
+  (Google / Entra / generic OIDC / Pragmatic -> `UpstreamOidcSource`; its `Complete` answers an `UpstreamSignIn` or a
+  typed `UpstreamRefusal` carrying the authorize request whenever the state was valid, which the broker callback turns
+  into a redirect back to the sign-in page with a `LoginNotice` marker, else `SignInFailurePage`) and `IdentityPlatformSourceSettings` (->
   `IdentityPlatformSource`). `IdpRealm` holds the local accounts (SQL identity stores, password hashes in the realm's
   `SqlSecretStore` scope `tenant-idp/<realm>`), profiles and federated links (`SqlIdpFederatedAccounts`).
 - **Clients.** `OidcClient` (`clients/oidc-client.ts`) has a `ClientKind` (`confidential` | `public`) and an optional

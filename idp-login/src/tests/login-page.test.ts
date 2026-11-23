@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { IdentityPlatformPageConfig, IdentityPlatformProvider, IdentityPlatformRestClient } from '@pragmatic-tech-ai/pragmatic-identity-source-identity-platform/client'
 import { FederatedRoundTrip, PendingFederatedSignIn } from '../federated-round-trip.js'
 import { BrowserLoginBackend, LoginAnswer } from '../login-backend.js'
-import { LoginBootState } from '../login-boot-state.js'
+import { LoginBootState, LoginNotice, LoginNoticeReason } from '../login-boot-state.js'
 import { LoginConfig } from '../login-config.js'
 import { LoginPageLocation } from '../login-page-location.js'
 import { FakeFetch, MemoryStorage } from './login-fakes.js'
@@ -166,5 +166,43 @@ describe('FederatedRoundTrip.Locate', () =>
         const page = LoginPageLocation.From('https://login.test', '/realms/other/protocol/openid-connect/auth', '?a=1')
         assert.equal(trip.Locate(page).IssuerPath, '/realms/other', 'only the handler page is relocated')
         assert.notEqual(trip.Take(''), undefined, 'still saved')
+    })
+})
+
+describe('the upstream notice', () =>
+{
+    it('reads a notice only from the "notice" flag with a known reason', () =>
+    {
+        const notice = LoginBootState.FromMeta('notice', 'domain', 'google')
+        assert.equal(notice.Failed, false)
+        assert.deepEqual(notice.Notice, new LoginNotice(LoginNoticeReason.Domain, 'google'))
+        assert.deepEqual(LoginBootState.FromMeta('notice', 'incomplete', null).Notice, new LoginNotice(LoginNoticeReason.Incomplete, undefined))
+        assert.equal(LoginBootState.FromMeta('notice', '<script>', 'google').Notice, undefined, 'an unknown reason is no notice')
+        assert.equal(LoginBootState.FromMeta('ready', 'domain', 'google').Notice, undefined)
+        assert.equal(LoginBootState.FromMeta('failed', 'domain', 'google').Failed, true)
+    })
+
+    it('drops the marker from the request the page posts and appends to broker links', () =>
+    {
+        const marked = LoginPageLocation.From('https://login.test', '/realms/staff/protocol/openid-connect/auth', '?client_id=c1&prompt=login%20create&pragmatic_notice=domain.google')
+        assert.equal(marked.Request, 'client_id=c1&prompt=login+create')
+        assert.equal(marked.PromptsCreate, true)
+        assert.equal(marked.WithRequest('client_id=c2&pragmatic_notice=incomplete').Request, 'client_id=c2')
+        const plain = LoginPageLocation.From('https://login.test', '/realms/staff/protocol/openid-connect/auth', '?client_id=c1&prompt=login%20create')
+        assert.equal(plain.Request, 'client_id=c1&prompt=login%20create', 'unchanged without a marker')
+    })
+
+    it('parses a source\'s hosted domain from the config', () =>
+    {
+        const config = LoginConfig.FromJson({
+            realm: 'staff', displayName: 'Staff', local: false, identityPlatform: null, signUp: false,
+            sources: [
+                { id: 'google', kind: 'google', label: 'Google', login: '/realms/staff/broker/google/login?', hostedDomain: 'pragmatic-tech.ai' },
+                { id: 'oidc', kind: 'oidc', label: 'SSO', login: '/realms/staff/broker/oidc/login?', hostedDomain: null },
+            ],
+        })
+        assert.equal(config.Sources[0]!.HostedDomain, 'pragmatic-tech.ai')
+        assert.equal(config.Sources[1]!.HostedDomain, undefined)
+        assert.throws(() => LoginConfig.FromJson({ realm: 'r', displayName: 'R', sources: [{ id: 'g', kind: 'google', label: 'G', login: '/x', hostedDomain: 7 }] }))
     })
 })

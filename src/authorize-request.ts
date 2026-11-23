@@ -1,4 +1,5 @@
 import type { IdpRealm } from './idp-realm.js';
+import { LoginNotice } from './login-notice.js';
 import type { OidcClient, SqlIdpClientStore } from './sql-idp-client-store.js';
 
 /** A refused authorize request: the status and the OAuth error body (never redirected: the client is not trusted yet). */
@@ -22,7 +23,8 @@ export class AuthorizeRefusal
  * A validated OIDC authorize request (authorization code flow with PKCE S256, state and nonce required, the redirect
  * URI registered for the client), and the `prompt` values it carries: `none` (answer silently or not at all), `login`
  * (authenticate again even with a session), `create` (OpenID Connect Initiating User Registration: open on sign-up).
- * `Query` is the request as the browser sent it, so the login page and an upstream sign-in carry it unchanged.
+ * `Query` is the request as the browser sent it, so the login page and an upstream sign-in carry it unchanged, less
+ * the sign-in page's notice marker (`LoginNotice`), which is never part of the OIDC request.
  */
 export class AuthorizeRequest
 {
@@ -72,9 +74,10 @@ export class AuthorizeRequest
     }
 
     /** The request when it is valid for the realm, else the refusal. */
-    public static async Validate(realm: IdpRealm | undefined, clients: SqlIdpClientStore, query: string): Promise<AuthorizeRequest | AuthorizeRefusal>
+    public static async Validate(realm: IdpRealm | undefined, clients: SqlIdpClientStore, presented: string): Promise<AuthorizeRequest | AuthorizeRefusal>
     {
         const A = AuthorizeRequest;
+        const query = LoginNotice.Strip(presented);
         if (realm === undefined)
         {
             return new AuthorizeRefusal(A.StatusNotFound, A.InvalidRequest, A.UnknownRealmDescription);

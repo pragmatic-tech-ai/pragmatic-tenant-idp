@@ -8,6 +8,7 @@ import
 } from '@pragmatic-tech-ai/pragmatic-identity-source-identity-platform/client'
 import { FederatedRoundTrip, PendingFederatedSignIn } from './federated-round-trip.js'
 import { LoginAnswer, type ILoginBackend } from './login-backend.js'
+import { LoginNoticeReason, type LoginNotice } from './login-boot-state.js'
 import type { LoginConfig } from './login-config.js'
 import type { LoginPageLocation } from './login-page-location.js'
 import { LoginSourceViewModel } from './login-source-view-model.js'
@@ -64,6 +65,13 @@ export class IdpLoginViewModel extends Observable
     private static readonly InvalidEmailMessage = 'Enter a valid email address.'
     private static readonly DisabledMessage = 'This account is disabled.'
     private static readonly MismatchMessage = 'The passwords do not match.'
+    // The banner after an upstream source sent the person back (always one of these, never text from the URL).
+    private static readonly DomainPrefix = 'Only '
+    private static readonly DomainSuffix = ' accounts can sign in here. Choose another account.'
+    private static readonly AccountRefusedMessage = "This account can't sign in here. Choose another account."
+    private static readonly IncompletePrefix = 'Sign-in with '
+    private static readonly IncompleteSuffix = " didn't complete. Try again."
+    private static readonly IncompleteMessage = "Sign-in didn't complete. Try again."
     private static readonly GoogleFailedMessage = 'Signing in with Google did not complete. Please try again.'
     private static readonly CheckEmailMessage = 'Check your email, then sign in.'
     private static readonly VerificationNotSentMessage = 'Your account was created, but the verification email could not be sent. Sign in to send it again.'
@@ -92,7 +100,7 @@ export class IdpLoginViewModel extends Observable
     private static readonly ConfirmPasswordProperty = 'ConfirmPassword'
     // Everything derived from the page state, re-announced (when changed) after each state change.
     private static readonly DerivedProperties: readonly string[] = [
-        'IsBusy', 'IsLoading', 'ErrorText', 'NoticeText', 'Title', 'Subtitle', 'DisplayName',
+        'IsBusy', 'IsLoading', 'ErrorText', 'NoticeText', 'BannerText', 'Title', 'Subtitle', 'DisplayName',
         'IsSignInMode', 'IsSignUpMode', 'IsForgotMode',
         'ShowsPasswordForm', 'ShowsCurrentPassword', 'ShowsNewPassword', 'ShowsConfirm',
         'ShowsSignInButton', 'ShowsSignUpButton', 'ShowsResetButton',
@@ -105,6 +113,7 @@ export class IdpLoginViewModel extends Observable
     private confirmPassword = IdpLoginViewModel.NoText
     private errorText: string
     private noticeText = IdpLoginViewModel.NoText
+    private bannerText = IdpLoginViewModel.NoText
     private isBusy = false
     private isLoading = true
     private mode = LoginMode.SignIn
@@ -128,14 +137,16 @@ export class IdpLoginViewModel extends Observable
 
     // `location`: where the page was served (the authorize URL and its request).
     // `fetchFn`: drives Identity Platform. `failed`: the page was served flagged
-    // after a rejected sign-in.
+    // after a rejected sign-in. `notice`: an upstream source sent the person
+    // back (the banner shows once the realm's config has loaded).
     public constructor(
         private readonly backend: ILoginBackend,
         private readonly navigator: IPageNavigator,
         private readonly location: LoginPageLocation,
         private readonly roundTrip: FederatedRoundTrip,
         private readonly fetchFn: typeof fetch,
-        failed: boolean = false)
+        failed: boolean = false,
+        private readonly notice: LoginNotice | undefined = undefined)
     {
         super()
         const V = IdpLoginViewModel
@@ -215,6 +226,13 @@ export class IdpLoginViewModel extends Observable
     public get ErrorText(): string
     {
         return this.errorText
+    }
+
+    // Why an upstream source sent the person back to this page ("choose another
+    // account"); '' otherwise. Cleared once the person starts another action.
+    public get BannerText(): string
+    {
+        return this.bannerText
     }
 
     // What the last action did (an email sent); '' when nothing to say.
@@ -445,6 +463,10 @@ export class IdpLoginViewModel extends Observable
         if (!this.ShowsPasswordForm && this.sources.Count === 0 && !this.ShowsGoogle)
         {
             this.errorText = V.NoMethodMessage
+        }
+        if (this.notice !== undefined && pending === undefined)
+        {
+            this.bannerText = V.BannerFor(this.notice, config)
         }
         this.Refresh()
         if (pending !== undefined && this.identityPlatform !== undefined)
@@ -693,6 +715,27 @@ export class IdpLoginViewModel extends Observable
         }
     }
 
+    // The banner for a notice: the source's label and hosted domain come from the
+    // realm's config (a source id it does not list reads as no source).
+    private static BannerFor(notice: LoginNotice, config: LoginConfig): string
+    {
+        const V = IdpLoginViewModel
+        const source = notice.SourceId === undefined ? undefined : config.Sources.find(candidate => candidate.Id === notice.SourceId)
+        switch (notice.Reason)
+        {
+            case LoginNoticeReason.Domain:
+                return source?.HostedDomain === undefined || source.HostedDomain === V.NoText
+                    ? V.AccountRefusedMessage
+                    : V.DomainPrefix + source.HostedDomain + V.DomainSuffix
+            case LoginNoticeReason.Inactive:
+                return V.AccountRefusedMessage
+            case LoginNoticeReason.Incomplete:
+                return source === undefined || source.Label === V.NoText
+                    ? V.IncompleteMessage
+                    : V.IncompletePrefix + source.Label + V.IncompleteSuffix
+        }
+    }
+
     // The text for an Identity Platform error code (undefined: not an Identity Platform answer).
     private static MessageFor(code: string | undefined): string
     {
@@ -748,6 +791,7 @@ export class IdpLoginViewModel extends Observable
         this.mode = mode
         this.ClearPasswords()
         this.unverifiedToken = undefined
+        this.bannerText = IdpLoginViewModel.NoText
         this.SetMessage(IdpLoginViewModel.NoText, IdpLoginViewModel.NoText)
     }
 
@@ -789,6 +833,7 @@ export class IdpLoginViewModel extends Observable
         this.ClearPasswords()
         this.unverifiedToken = undefined
         this.isBusy = true
+        this.bannerText = IdpLoginViewModel.NoText
         this.errorText = IdpLoginViewModel.NoText
         this.noticeText = IdpLoginViewModel.NoText
         this.Refresh()

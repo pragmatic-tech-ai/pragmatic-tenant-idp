@@ -1,13 +1,15 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { LoginNotice } from './login-notice.js';
 
 /** A static asset of the sign-in app, ready to write. */
 export type IdpLoginAsset = { bytes: Buffer; contentType: string; cacheControl: string };
 
 /**
  * The IdP's sign-in page: the built Mural sign-in app (idp-login/dist). The page itself is the app's index.html with
- * its `<meta name="pragmatic-login">` flag set ("failed" after a rejected sign-in); the app's assets are served under
+ * its `<meta name="pragmatic-login">` flag set ("failed" after a rejected sign-in, "notice" with `data-reason` and
+ * `data-source` when an upstream source sent the person back to choose another account); the app's assets are served under
  * /_login/. The app posts the same email/password form to the authorize URL the plain page used to, so the IdP's
  * handling of the credentials is unchanged. Nothing secret is ever rendered into the page.
  */
@@ -19,6 +21,14 @@ export class IdpLoginPage
     public static readonly Marker = '<meta name="pragmatic-login"';
     private static readonly ReadyFlag = '<meta name="pragmatic-login" content="ready">';
     private static readonly FailedFlag = '<meta name="pragmatic-login" content="failed">';
+    private static readonly NoticeFlagOpen = '<meta name="pragmatic-login" content="notice" data-reason="';
+    private static readonly NoticeSourceAttribute = '" data-source="';
+    private static readonly NoticeFlagClose = '">';
+    private static readonly NoText = '';
+    private static readonly AttributeEscapes: ReadonlyMap<string, string> = new Map([
+        ['&', '&amp;'], ['"', '&quot;'], ["'", '&#39;'], ['<', '&lt;'], ['>', '&gt;'],
+    ]);
+    private static readonly AttributeSpecials = /[&"'<>]/g;
     private static readonly PlaceholderHtml = '<!doctype html><html><head><meta charset="utf-8">'
         + IdpLoginPage.ReadyFlag + '<title>Sign in</title></head><body><p>The sign-in app is not built.</p></body></html>';
     private static readonly IndexFile = 'index.html';
@@ -84,6 +94,20 @@ export class IdpLoginPage
     }
 
     /**
+     * The page document flagged with an upstream source's notice (the page picks its own message by the reason). The
+     * reason is one of a fixed set and the source one of the realm's; both are attribute-escaped all the same.
+     */
+    public RenderNotice(notice: LoginNotice): string
+    {
+        const P = IdpLoginPage;
+        const flag = P.NoticeFlagOpen + P.EscapeAttribute(notice.Reason)
+            + (notice.SourceId === undefined ? P.NoText : P.NoticeSourceAttribute + P.EscapeAttribute(notice.SourceId))
+            + P.NoticeFlagClose;
+        // A replacer function: the flag is inserted verbatim (no `$` patterns).
+        return this.index.replace(P.ReadyFlag, () => flag);
+    }
+
+    /**
      * The asset at `path` (the part after /_login/), or undefined. Only files read from the app's directory at load are
      * served (never index.html), looked up by exact relative path, so no request path can reach outside it.
      */
@@ -99,6 +123,11 @@ export class IdpLoginPage
             return undefined;
         }
         return this.assets.get(decoded);
+    }
+
+    private static EscapeAttribute(value: string): string
+    {
+        return value.replace(IdpLoginPage.AttributeSpecials, special => IdpLoginPage.AttributeEscapes.get(special) ?? special);
     }
 
     private static Create(index: string, assets: ReadonlyMap<string, IdpLoginAsset>): IdpLoginPage

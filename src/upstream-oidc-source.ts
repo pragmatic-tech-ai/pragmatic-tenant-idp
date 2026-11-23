@@ -1,5 +1,5 @@
 import { AuthMethod, AuthenticatedResult, Credential, DelegationDepth, IdentityConfig, PresentedSecret, Realm, RealmKind, type ISecretStore, type Principal, RealmIssuer } from '@pragmatic-tech-ai/pragmatic-identity';
-import { ClaimArrayGroupStrategy, ClaimsMapper, GenericOidcProfile, JwksCache, OidcAuthenticator, OidcDiscovery, OidcHttpClients, OidcResolvedConfig, OidcSettingKeys, type IHttpClient, type IOidcFlowStateStore, type OidcProviderProfile } from '@pragmatic-tech-ai/pragmatic-identity-source-oidc';
+import { ClaimArrayGroupStrategy, ClaimsMapper, GenericOidcProfile, JwksCache, OidcAuthenticator, OidcDiscovery, OidcHttpClients, OidcResolvedConfig, OidcSettingKeys, type IHttpClient, type IOidcFlowStateStore, type OidcFlowState, type OidcProviderProfile } from '@pragmatic-tech-ai/pragmatic-identity-source-oidc';
 import { GoogleIdentityProfile } from '@pragmatic-tech-ai/pragmatic-identity-source-google';
 import { MicrosoftEntraProfile } from '@pragmatic-tech-ai/pragmatic-identity-source-entra';
 import { PragmaticIdentityProfile } from '@pragmatic-tech-ai/pragmatic-identity-source-pragmatic';
@@ -29,6 +29,61 @@ class UpstreamClientSecret implements ISecretStore
     public async Delete(): Promise<void>
     {
         throw new Error(UpstreamClientSecret.ReadOnlyMessage);
+    }
+}
+
+/**
+ * The flow-state store as the authenticator sees it, remembering what each callback's `Take` handed back until the
+ * callback claims it: the authenticator drops the carried return path on any rejection after the state was taken (a
+ * failed code exchange, a bad token), and the realm still needs it to send the person back to its sign-in page.
+ */
+class ReturnPathCapture implements IOidcFlowStateStore
+{
+    private readonly taken = new Map<string, string | null>();
+
+    public constructor(private readonly inner: IOidcFlowStateStore)
+    {
+    }
+
+    public Put(state: OidcFlowState): Promise<void>
+    {
+        return this.inner.Put(state);
+    }
+
+    public async Take(state: string): Promise<OidcFlowState | null>
+    {
+        const flow = await this.inner.Take(state);
+        if (flow !== null)
+        {
+            this.taken.set(state, flow.ReturnPath);
+        }
+        return flow;
+    }
+
+    /** The return path the flow taken for `state` carried (once; undefined when none was taken or it had none). */
+    public Claim(state: string): string | undefined
+    {
+        const path = this.taken.get(state);
+        this.taken.delete(state);
+        return path ?? undefined;
+    }
+}
+
+/** Why an upstream callback signed nobody in. */
+export enum UpstreamRefusalReason
+{
+    /** The account is not of the source's hosted domain. */
+    WrongDomain = 'wrongDomain',
+    /** No sign-in: a bad, expired or replayed state, no code, a failed code exchange or an invalid ID token. */
+    Incomplete = 'incomplete',
+}
+
+/** An upstream callback that signed nobody in: why, and the realm's authorize request when the state was valid. */
+export class UpstreamRefusal
+{
+    public constructor(public readonly Reason: UpstreamRefusalReason, public readonly AuthorizeRequest: string | undefined)
+    {
+        Object.freeze(this);
     }
 }
 
@@ -81,6 +136,7 @@ export class UpstreamOidcSource
 
     private readonly authenticator: OidcAuthenticator;
     private readonly realm: Realm;
+    private readonly flowStates: ReturnPathCapture;
 
     private constructor(
         public readonly Settings: UpstreamSourceSettings,
@@ -94,6 +150,7 @@ export class UpstreamOidcSource
     {
         const U = UpstreamOidcSource;
         this.realm = new Realm(realmId, RealmKind.SelfHosted, realmId);
+        this.flowStates = new ReturnPathCapture(flowStates);
         const scopes = profile.DefaultScopes;
         const resolved = new OidcResolvedConfig(
             profile.ResolveDiscoveryUrl(providerSettings),
@@ -107,7 +164,7 @@ export class UpstreamOidcSource
             Http: http,
             Discovery: new OidcDiscovery(http, now),
             Jwks: new JwksCache(http),
-            FlowStates: flowStates,
+            FlowStates: this.flowStates,
             Secrets: new UpstreamClientSecret(Settings.ClientSecret),
             Claims: new ClaimsMapper(profile),
             Config: new IdentityConfig(U.PackId, DelegationDepth.AuthnDirectory, providerSettings, new Map(), new Map()),
@@ -140,21 +197,44 @@ export class UpstreamOidcSource
         return (await this.authenticator.BeginAuthorization(this.realm, { ReturnPath: authorizeRequest })).Url;
     }
 
-    /** The upstream principal of a callback; undefined for any refusal (bad state, code, token, or another domain). */
-    public async Complete(code: string, state: string): Promise<UpstreamSignIn | undefined>
+    /** The source's Google Workspace domain, when it admits only that one. */
+    public get HostedDomain(): string | undefined
     {
+        return this.Settings.HostedDomain;
+    }
+
+    /**
+     * The upstream principal of a callback, or why it signed nobody in (another domain, or any failure of the round
+     * trip), with the realm's authorize request whenever the state was one this source began. `code` is undefined when
+     * the upstream answered with an error instead (the person cancelled): the state is still taken, so it works once.
+     */
+    public async Complete(code: string | undefined, state: string): Promise<UpstreamSignIn | UpstreamRefusal>
+    {
+        const U = UpstreamRefusalReason;
+        if (code === undefined)
+        {
+            const flow = await this.flowStates.Take(state);
+            this.flowStates.Claim(state);
+            return new UpstreamRefusal(U.Incomplete, flow?.ReturnPath ?? undefined);
+        }
         const presented = new PresentedSecret(code);
         try
         {
             const outcome = await this.authenticator.AuthenticateWithTokens(new Credential(AuthMethod.Oidc, state), presented, this.realm);
-            if (!(outcome.Result instanceof AuthenticatedResult) || outcome.ReturnPath === null || !this.Admits(outcome.Result.Principal))
+            const carried = this.flowStates.Claim(state);
+            if (!(outcome.Result instanceof AuthenticatedResult) || outcome.ReturnPath === null)
             {
-                return undefined;
+                return new UpstreamRefusal(U.Incomplete, carried);
+            }
+            if (!this.Admits(outcome.Result.Principal))
+            {
+                return new UpstreamRefusal(U.WrongDomain, outcome.ReturnPath);
             }
             return new UpstreamSignIn(outcome.Result.Principal, outcome.ReturnPath);
         }
         finally
         {
+            this.flowStates.Claim(state);
             presented.Clear();
         }
     }

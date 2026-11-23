@@ -1,15 +1,17 @@
 import { IdentityPlatformPageConfig } from '@pragmatic-tech-ai/pragmatic-identity-source-identity-platform/client'
 
 // One upstream identity source of the realm (Google, Microsoft, a generic
-// OIDC provider, Pragmatic): its button label and the broker login path the
-// page appends the authorize request to.
+// OIDC provider, Pragmatic): its button label, the broker login path the
+// page appends the authorize request to, and the one Workspace domain it
+// admits (a Google source with a hosted domain; undefined otherwise).
 export class LoginSource
 {
     public constructor(
         public readonly Id: string,
         public readonly Kind: string,
         public readonly Label: string,
-        public readonly Login: string)
+        public readonly Login: string,
+        public readonly HostedDomain: string | undefined = undefined)
     {
     }
 }
@@ -28,6 +30,7 @@ export class LoginConfig
     private static readonly KindField = 'kind'
     private static readonly LabelField = 'label'
     private static readonly LoginField = 'login'
+    private static readonly HostedDomainField = 'hostedDomain'
 
     public constructor(
         public readonly Realm: string,
@@ -71,7 +74,9 @@ export class LoginConfig
             throw new Error(C.InvalidMessage)
         }
         const value = json as Record<string, unknown>
-        return new LoginSource(C.Text(value[C.IdField]), C.Text(value[C.KindField]), C.Text(value[C.LabelField]), C.Text(value[C.LoginField]))
+        const domain = value[C.HostedDomainField] ?? null
+        return new LoginSource(C.Text(value[C.IdField]), C.Text(value[C.KindField]), C.Text(value[C.LabelField]), C.Text(value[C.LoginField]),
+            domain === null ? undefined : C.Text(domain))
     }
 
     private static Text(value: unknown): string

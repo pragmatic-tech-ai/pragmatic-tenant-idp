@@ -20,13 +20,15 @@ export class LoginHostService extends ServiceBase
         const roundTrip = new FederatedRoundTrip(window.sessionStorage)
         const location = roundTrip.Locate(LoginPageLocation.FromWindow())
         const fetchFn = globalThis.fetch.bind(globalThis)
+        const boot = LoginBootState.FromDocument(document)
         this.page = new IdpLoginViewModel(
             new BrowserLoginBackend(location, fetchFn),
             new BrowserPageNavigator(),
             location,
             roundTrip,
             fetchFn,
-            LoginBootState.FromDocument(document).Failed)
+            boot.Failed,
+            boot.Notice)
         // A page restored from the back/forward cache keeps its in-memory state (a
         // busy form); reset it so the form works again.
         window.addEventListener(LoginHostService.PageShowEvent, (e) =>

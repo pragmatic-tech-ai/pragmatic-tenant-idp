@@ -2,7 +2,10 @@
 // (the page's path without the authorize suffix), the OIDC authorize request
 // (the page's query without its `?`), and the two parameters the page itself
 // reads from that request: `prompt=create` (open in sign-up mode) and
-// `login_hint` (prefill the email).
+// `login_hint` (prefill the email). The IdP's notice marker
+// (`pragmatic_notice`, set when an upstream source sent the person back) is
+// never part of the request: it is dropped here, so no post, broker link or
+// round trip built from the location carries it.
 export class LoginPageLocation
 {
     public static readonly AuthorizeSuffix = '/protocol/openid-connect/auth'
@@ -17,6 +20,7 @@ export class LoginPageLocation
     private static readonly PromptCreate = 'create'
     private static readonly PromptSeparator = ' '
     private static readonly LoginHintParam = 'login_hint'
+    public static readonly NoticeParam = 'pragmatic_notice'
     private static readonly NoText = ''
 
     private constructor(
@@ -41,7 +45,7 @@ export class LoginPageLocation
         const L = LoginPageLocation
         const issuer = pathname.endsWith(L.AuthorizeSuffix) ? pathname.slice(0, pathname.length - L.AuthorizeSuffix.length) : pathname
         const request = search.startsWith(L.QueryMark) ? search.slice(1) : search
-        return new LoginPageLocation(origin, issuer, request, href)
+        return new LoginPageLocation(origin, issuer, L.WithoutNotice(request), href)
     }
 
     public static FromWindow(): LoginPageLocation
@@ -64,7 +68,19 @@ export class LoginPageLocation
     // The same page for another authorize request (the original one, restored after a round trip).
     public WithRequest(request: string): LoginPageLocation
     {
-        return new LoginPageLocation(this.Origin, this.IssuerPath, request, this.Href)
+        return new LoginPageLocation(this.Origin, this.IssuerPath, LoginPageLocation.WithoutNotice(request), this.Href)
+    }
+
+    // The request without the notice marker; unchanged when it carries none.
+    public static WithoutNotice(request: string): string
+    {
+        const params = new URLSearchParams(request)
+        if (!params.has(LoginPageLocation.NoticeParam))
+        {
+            return request
+        }
+        params.delete(LoginPageLocation.NoticeParam)
+        return params.toString()
     }
 
     // The page's own query, as `location.search` reports it.

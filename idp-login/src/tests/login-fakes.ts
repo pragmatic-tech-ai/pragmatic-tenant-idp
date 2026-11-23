@@ -2,6 +2,7 @@ import { IdentityPlatformPageConfig, IdentityPlatformProvider } from '@pragmatic
 import { FederatedRoundTrip, type IRoundTripStorage } from '../federated-round-trip.js'
 import { IdpLoginViewModel } from '../idp-login-view-model.js'
 import { LoginAnswer, type ILoginBackend } from '../login-backend.js'
+import type { LoginNotice } from '../login-boot-state.js'
 import { LoginConfig, LoginSource } from '../login-config.js'
 import { LoginPageLocation } from '../login-page-location.js'
 import type { IPageNavigator } from '../page-navigator.js'
@@ -127,12 +128,12 @@ export class LoginFixture
     public readonly Ip = new FakeFetch()
     public readonly Page: IdpLoginViewModel
 
-    public constructor(config: LoginConfig | undefined, request: string = LoginFixture.Request, storage: MemoryStorage = new MemoryStorage(), failed = false)
+    public constructor(config: LoginConfig | undefined, request: string = LoginFixture.Request, storage: MemoryStorage = new MemoryStorage(), failed = false, notice?: LoginNotice)
     {
         this.Backend = new FakeBackend(config)
         this.Storage = storage
         const location = LoginPageLocation.From(LoginFixture.Origin, LoginFixture.AuthorizePath, '?' + request)
-        this.Page = new IdpLoginViewModel(this.Backend, this.Navigator, location, new FederatedRoundTrip(storage), this.Ip.Fetch, failed)
+        this.Page = new IdpLoginViewModel(this.Backend, this.Navigator, location, new FederatedRoundTrip(storage), this.Ip.Fetch, failed, notice)
     }
 
     public static Local(sources: LoginSource[] = []): LoginConfig
@@ -144,6 +145,18 @@ export class LoginFixture
     {
         const page = new IdentityPlatformPageConfig('proj', LoginFixture.ApiKey, 'proj.firebaseapp.com', providers, tenantId)
         return new LoginConfig('central', 'Central', local, [], page, signUp)
+    }
+
+    // A staff realm's Google source admitting one Workspace domain.
+    public static readonly StaffGoogle = new LoginSource('google', 'google', 'Google', '/realms/staff/broker/google/login?', 'pragmatic-tech.ai')
+
+    // A page the IdP served with an upstream notice, the request carrying its marker, loaded over a staff realm.
+    public static async Noticed(notice: LoginNotice, sources: LoginSource[] = [LoginFixture.StaffGoogle]): Promise<LoginFixture>
+    {
+        const fixture = new LoginFixture(new LoginConfig('staff', 'Pragmatic staff', true, sources, null, false),
+            LoginFixture.Request + '&pragmatic_notice=domain.google', undefined, false, notice)
+        await fixture.Page.Load()
+        return fixture
     }
 
     public static async Loaded(config: LoginConfig | undefined, request?: string): Promise<LoginFixture>
