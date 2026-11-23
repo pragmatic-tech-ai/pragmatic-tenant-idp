@@ -4,6 +4,13 @@ The realm sign-in service: an OpenID Connect provider for one or more realms, wi
 (`idp-login/`) and its container image `ghcr.io/pragmatic-tech-ai/pragmatic-tenant-idp` (linux/amd64 + linux/arm64).
 Split out of pragmatic-server; see `ARCHITECTURE.md`.
 
+## Configuration
+
+The service reads `PRAGMATIC_IDP_*` (declared in `src/tenant-idp-component.ts`). At start the mounted
+`pragmatic-config-pragmatic-tenant-idp` file (the tenant admin console's applied configuration) is laid over the `core`
+variables; one the service cannot start with exits 78 with the reason. The per-realm options in the same folder are
+read by `RealmConfigurationReader`. A configured admin token is read from `PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE`.
+
 ## Build and test
 
 Packages come from GitHub Packages (`.npmrc`, token in `NODE_AUTH_TOKEN`, `read:packages`).

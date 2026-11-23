@@ -11,7 +11,7 @@ export class TenantIdpComponent
 {
     public static readonly Name = 'pragmatic-tenant-idp';
     /** The descriptor version: this application's package version (the release test pins it to package.json). */
-    public static readonly Version = '0.2.0';
+    public static readonly Version = '0.2.1';
 
     private static readonly Core: OptionDeclaration = {
         name: O.Core,
@@ -115,7 +115,8 @@ export class TenantIdpComponent
         ],
     };
 
-    private static readonly Declaration: ComponentDeclaration = {
+    /** The declaration: the descriptor, and the variable the start step overlays each configured `core` setting onto. */
+    public static readonly Declaration: ComponentDeclaration = {
         name: TenantIdpComponent.Name,
         version: TenantIdpComponent.Version,
         options: [

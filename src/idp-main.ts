@@ -1,3 +1,4 @@
+import { ComponentStartConfiguration } from '@pragmatic-tech-ai/pragmatic-configuration';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
@@ -30,6 +31,7 @@ export class IdpMain
     private static readonly TlsEnvVar = 'PRAGMATIC_IDP_TLS';
     private static readonly TrustedProxyEnvVar = 'PRAGMATIC_IDP_TRUSTED_PROXY';
     private static readonly AdminTokenRefEnvVar = 'PRAGMATIC_IDP_ADMIN_TOKEN_REF';
+    private static readonly AdminTokenFileEnvVar = 'PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE';
     private static readonly ConfigurationDirEnvVar = 'PRAGMATIC_IDP_CONFIGURATION_DIR';
     private static readonly BootstrapRealmEnvVar = 'PRAGMATIC_IDP_BOOTSTRAP_REALM_FILE';
     private static readonly SecretsDirEnvVar = 'PRAGMATIC_IDP_SECRETS_DIR';
@@ -70,6 +72,9 @@ export class IdpMain
 
     public static async Run(): Promise<void>
     {
+        // First of all: the applied configuration's `core` options over the environment (the per-realm options stay with
+        // RealmConfigurationReader, which reads every realm's file in the same folder).
+        await ComponentStartConfiguration.ApplyOrExit({ Declaration: TenantIdpComponent.Declaration, Env: process.env });
         const service = await IdpMain.Compose(process.env);
         const bind = process.env[IdpMain.HostEnvVar] ?? IdpMain.DefaultHost;
         const port = IdpMain.ResolvePort(process.env[IdpMain.PortEnvVar]);
@@ -96,7 +101,7 @@ export class IdpMain
         const data = env[M.DataEnvVar] ?? join(dirname(fileURLToPath(import.meta.url)), M.DataDir);
         mkdirSync(data, { recursive: true });
         const signingKey = await IdpSigningKey.LoadOrCreate(join(data, M.SigningKeyFile));
-        const adminTokens = M.LoadAdminTokens(data, env[M.AdminTokenRefEnvVar]);
+        const adminTokens = M.AdminTokensOf(env, data);
         const db = database ?? await TenantIdpDatabase.Open(env);
         const masterKeyFile = join(data, M.MasterKeyFile);
         // A new master key over a database that holds realms would leave every sealed secret unreadable: refuse instead.
@@ -167,24 +172,38 @@ export class IdpMain
     }
 
     /**
-     * Reads the admin token SET from `<data>/secrets/<ref>`: newline-separated, each trimmed, blanks dropped (a single
+     * Reads the admin token SET from the file PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE names (where the start step writes a
+     * configured `adminToken`), else from `<data>/secrets/<ref>`: newline-separated, each trimmed, blanks dropped (a single
      * line is a set of one). Fail-closed: an unset ref, a missing file, or no non-blank token all mean admin is
      * disabled (undefined). No token is ever logged or put in an error.
      */
-    private static LoadAdminTokens(data: string, ref: string | undefined): string[] | undefined
+    public static AdminTokensOf(env: NodeJS.ProcessEnv, data: string): string[] | undefined
     {
+        const M = IdpMain;
+        // A configured admin token is written by the start step to the file PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE names.
+        const file = env[M.AdminTokenFileEnvVar];
+        if (file !== undefined && file !== '')
+        {
+            return M.ReadAdminTokens(file);
+        }
+        const ref = env[M.AdminTokenRefEnvVar];
         if (ref === undefined || ref === '')
         {
             return undefined;
         }
-        if (basename(ref) !== ref || ref === IdpMain.CurrentDir || ref === IdpMain.ParentDir)
+        if (basename(ref) !== ref || ref === M.CurrentDir || ref === M.ParentDir)
         {
             return undefined;
         }
+        return M.ReadAdminTokens(join(data, M.SecretsDir, ref));
+    }
+
+    private static ReadAdminTokens(path: string): string[] | undefined
+    {
         let raw: string;
         try
         {
-            raw = readFileSync(join(data, IdpMain.SecretsDir, ref), IdpMain.Utf8);
+            raw = readFileSync(path, IdpMain.Utf8);
         }
         catch (err)
         {
