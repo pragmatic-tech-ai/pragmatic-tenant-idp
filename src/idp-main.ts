@@ -1,4 +1,4 @@
-import { ComponentStartConfiguration } from '@pragmatic-tech-ai/pragmatic-configuration';
+import { ComponentStartConfiguration, type IStartProcess } from '@pragmatic-tech-ai/pragmatic-configuration';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
@@ -74,12 +74,19 @@ export class IdpMain
     {
         // First of all: the applied configuration's `core` options over the environment (the per-realm options stay with
         // RealmConfigurationReader, which reads every realm's file in the same folder).
-        await ComponentStartConfiguration.ApplyOrExit({ Declaration: TenantIdpComponent.Declaration, Env: process.env });
+        await IdpMain.StartConfiguration(process.env);
         const service = await IdpMain.Compose(process.env);
         const bind = process.env[IdpMain.HostEnvVar] ?? IdpMain.DefaultHost;
         const port = IdpMain.ResolvePort(process.env[IdpMain.PortEnvVar]);
         await service.Listen(port, bind);
         console.log(IdpMain.ListeningPrefix + process.env[IdpMain.BaseUrlEnvVar]);
+    }
+
+    /** The start step over `env`: the applied configuration's `core` options onto the variables they name (exit 78 when
+     *  it refuses the start). The realm options and their secrets (the realm store) are RealmConfigurationReader's. */
+    public static async StartConfiguration(env: NodeJS.ProcessEnv, process?: IStartProcess): Promise<void>
+    {
+        await ComponentStartConfiguration.ApplyOrExit({ Declaration: TenantIdpComponent.Declaration, Env: env }, process);
     }
 
     /** Builds every collaborator from the environment and returns a not-yet-listening service. */

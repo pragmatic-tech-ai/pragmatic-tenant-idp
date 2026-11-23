@@ -12,7 +12,7 @@ export class TenantIdpComponent
 {
     public static readonly Name = 'pragmatic-tenant-idp';
     /** The descriptor version: this application's package version (the release test pins it to package.json). */
-    public static readonly Version = '0.2.4';
+    public static readonly Version = '0.2.5';
 
     private static readonly Core: OptionDeclaration = {
         name: O.Core,
