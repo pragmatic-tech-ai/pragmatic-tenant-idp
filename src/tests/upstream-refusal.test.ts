@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, before, describe, it, test } from 'node:test';
 import { FakeOidcHttpClient, FakeOidcIdp } from '@pragmatic-tech-ai/pragmatic-identity-source-oidc/testing';
 import { FakeIdentityPlatformHttp, FakeIdentityPlatform } from '@pragmatic-tech-ai/pragmatic-identity-source-identity-platform/testing';
@@ -49,12 +50,23 @@ test('the notice flag carries only escaped attribute values, never markup', () =
     assert.ok(!crafted.includes('content="ready"'));
 });
 
+test('the sign-in app reads the same wire values the service writes', () =>
+{
+    const app = (file: string): string => readFileSync(new URL('../../idp-login/src/' + file, import.meta.url), 'utf8');
+    const bootState = app('login-boot-state.ts');
+    for (const [name, value] of Object.entries(LoginNoticeReason))
+    {
+        assert.ok(bootState.includes(name + " = '" + value + "'"), 'the app knows reason ' + value);
+    }
+    assert.ok(app('login-page-location.ts').includes("NoticeParam = '" + LoginNotice.MarkerParam + "'"));
+});
+
 test('the failure page is static HTML that renders nothing from the request', () =>
 {
     const html = SignInFailurePage.Render();
     assert.match(html, /^<!doctype html>/);
     assert.ok(html.includes(SignInFailurePage.Title));
-    assert.ok(html.includes(SignInFailurePage.StartAgain));
+    assert.ok(html.includes(SignInFailurePage.WhatToDo));
     assert.ok(html.includes(SignInFailurePage.Advice));
 });
 
@@ -118,8 +130,12 @@ describe('the realm sign-in service: an upstream source that signs nobody in', (
         const platform = await FakeIdentityPlatform.Create();
         const google = await FakeOidcIdp.Create(GoogleIdentityProfile.GoogleIssuer);
         googleHttp = new FakeOidcHttpClient(google);
-        const staff = RealmTestConfiguration.Of(F.Staff, { options: { google: { clientId: F.GoogleClient, clientSecret: 'secret:realm/google', hostedDomain: F.Domain } } },
-            { [RealmTestConfiguration.Secret('google', 'clientSecret')]: 'google-secret' }, 'Pragmatic staff');
+        const staff = RealmTestConfiguration.Of(F.Staff, {
+            options: {
+                google: { clientId: F.GoogleClient, clientSecret: 'secret:realm/google', hostedDomain: F.Domain },
+                oidc: { issuer: 'https://other.example', discoveryUrl: 'https://other.example/.well-known/openid-configuration', clientId: 'other-client', clientSecret: 'secret:realm/other' },
+            },
+        }, { [RealmTestConfiguration.Secret('google', 'clientSecret')]: 'google-secret', [RealmTestConfiguration.Secret('oidc', 'clientSecret')]: 'other-secret' }, 'Pragmatic staff');
         host = await TenantIdpTestHost.Start({ Configurations: [staff], SourceClients: new IdpSourceClients(googleHttp, new FakeIdentityPlatformHttp(platform)) });
         assert.equal((await host.Admin('POST', F.Staff + '/clients', { clientId: F.ClientId, secret: F.Secret, redirectUris: [F.Redirect] })).Status, 200);
         flow = new IdpTestFlow(host, F.Staff, F.ClientId, F.Secret, F.Redirect);
@@ -134,7 +150,9 @@ describe('the realm sign-in service: an upstream source that signs nobody in', (
     it('sends an account of another domain back to the sign-in page with the domain notice', async () =>
     {
         const config = (await host.Http.Send('GET', flow.Issuer + RealmIssuer.LoginConfigPath)).Json();
-        assert.equal(config.sources[0].hostedDomain, F.Domain, 'the page learns the domain from its config, never from the URL');
+        const sources = new Map((config.sources as Array<{ id: string; hostedDomain: string | null }>).map(source => [source.id, source.hostedDomain]));
+        assert.equal(sources.get('google'), F.Domain, 'the page learns the domain from its config, never from the URL');
+        assert.equal(sources.get('oidc'), null);
         const request = flow.Request();
         const location = R.AssertReturned(await trip.Answer(request, { sub: 'gmail-1', email: 'someone@gmail.com', name: 'Someone' }), request.Query, LoginNoticeReason.Domain);
         const page = await host.Http.Send('GET', host.BaseUrl + location);
@@ -177,7 +195,13 @@ describe('the realm sign-in service: an upstream source that signs nobody in', (
         const { Authorize, Binding } = await trip.Begin(request);
         const state = Authorize.searchParams.get('state')!;
         R.AssertReturned(await trip.Callback({ error: 'access_denied', state }, Binding), request.Query, LoginNoticeReason.Incomplete);
-        assert.equal((await trip.Callback({ error: 'access_denied', state }, Binding)).Status, 401, 'the state works once');
+        const again = await trip.Callback({ error: 'access_denied', state }, Binding);
+        assert.equal(again.Status, 401, 'the state works once');
+        assert.match(again.Header('content-type') ?? '', /text\/html/);
+        assert.ok(again.Text.includes(SignInFailurePage.Title));
+        const unknown = await trip.Callback({ error: 'access_denied', state: 'expired-or-never-begun' }, Binding);
+        assert.equal(unknown.Status, 401, 'an unknown or expired state on the missing-code path recovers nothing');
+        assert.ok(unknown.Text.includes(SignInFailurePage.Title));
     });
 
     it('answers the failure page, never JSON, when the request cannot be recovered', async () =>
@@ -217,5 +241,59 @@ describe('the realm sign-in service: an upstream source that signs nobody in', (
         const stripped = LoginNotice.Strip(marked.Query);
         assert.notEqual(stripped, marked.Query);
         R.AssertReturned(await trip.Answer(marked, { sub: 'gmail-2', email: 'other@gmail.com' }), stripped, LoginNoticeReason.Domain);
+    });
+
+    it('asks Google for its account chooser and the hosted domain, so another account is one click away', async () =>
+    {
+        const { Authorize } = await trip.Begin(flow.Request());
+        assert.equal(Authorize.searchParams.get('prompt'), 'select_account');
+        assert.equal(Authorize.searchParams.get('hd'), F.Domain);
+    });
+
+    it('recovers nothing from a state another source began, and spends it', async () =>
+    {
+        const { Authorize, Binding } = await trip.Begin(flow.Request());
+        const state = Authorize.searchParams.get('state')!;
+        const crossed = await host.Http.Send('GET', flow.Issuer + '/broker/oidc/callback?' + new URLSearchParams({ error: 'access_denied', state }).toString(), { Headers: { cookie: Binding } });
+        assert.equal(crossed.Status, 401);
+        assert.ok(crossed.Text.includes(SignInFailurePage.Title));
+        assert.equal(crossed.Header('location'), undefined, 'never a notice naming the wrong source');
+        const after = await trip.Callback({ error: 'access_denied', state }, Binding);
+        assert.equal(after.Status, 401, 'the state is spent');
+        const { Authorize: second, Binding: secondBinding } = await trip.Begin(flow.Request());
+        const withCode = await host.Http.Send('GET', flow.Issuer + '/broker/oidc/callback?' + new URLSearchParams({ code: 'c', state: second.searchParams.get('state')! }).toString(), { Headers: { cookie: secondBinding } });
+        assert.equal(withCode.Status, 401);
+        assert.equal(withCode.Header('location'), undefined);
+    });
+
+    it('a sign-in from a marked request reaches the application without the marker', async () =>
+    {
+        const marked = flow.Request({ pragmatic_notice: 'domain.google' });
+        const signedIn = await trip.Answer(marked, { sub: 'staff-2', email: 'ada@pragmatic-tech.ai', name: 'Ada', hd: F.Domain });
+        assert.equal(signedIn.Status, 302);
+        const location = signedIn.Header('location')!;
+        assert.ok(location.startsWith(F.Redirect + '?'));
+        assert.ok(!location.includes('pragmatic_notice'));
+        assert.ok(IdpTestFlow.CodeOf(location, marked).length > 0);
+        const cookie = /idp_sso=[^;,]+/.exec(String(signedIn.Headers['set-cookie']))![0];
+        // With the live SSO session a marked request is answered silently, again without the marker.
+        const again = flow.Request({ pragmatic_notice: 'incomplete.google' });
+        const silent = await flow.Authorize(again, cookie);
+        assert.equal(silent.Status, 302);
+        assert.ok(silent.Header('location')!.startsWith(F.Redirect + '?'));
+        assert.ok(!silent.Header('location')!.includes('pragmatic_notice'));
+        assert.ok(IdpTestFlow.CodeOf(silent.Header('location')!, again).length > 0);
+    });
+
+    it('a marked prompt=none request without a session answers login_required, without the marker', async () =>
+    {
+        const request = flow.Request({ prompt: 'none', pragmatic_notice: 'domain.google' });
+        const reply = await flow.Authorize(request);
+        assert.equal(reply.Status, 302);
+        const location = new URL(reply.Header('location')!);
+        assert.equal(location.origin + location.pathname, F.Redirect);
+        assert.equal(location.searchParams.get('error'), 'login_required');
+        assert.equal(location.searchParams.get('state'), request.State);
+        assert.equal(location.searchParams.get('pragmatic_notice'), null);
     });
 });

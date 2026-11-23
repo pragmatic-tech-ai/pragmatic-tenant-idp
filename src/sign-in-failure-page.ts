@@ -8,7 +8,7 @@
 export class SignInFailurePage
 {
     public static readonly Title = 'Sign-in couldn\'t be completed';
-    public static readonly StartAgain = 'Start again';
+    public static readonly WhatToDo = 'What to do';
     public static readonly Advice = 'Go back to the application you came from and sign in again from there.';
     private static readonly Html = '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         + '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -19,7 +19,7 @@ export class SignInFailurePage
         + 'h1{font-size:20px;margin:0 0 8px}h2{font-size:15px;margin:16px 0 4px}p{margin:0;color:#a9afbb}'
         + '</style></head><body><main>'
         + '<h1>' + SignInFailurePage.Title + '</h1>'
-        + '<h2>' + SignInFailurePage.StartAgain + '</h2>'
+        + '<h2>' + SignInFailurePage.WhatToDo + '</h2>'
         + '<p>' + SignInFailurePage.Advice + '</p>'
         + '</main></body></html>';
 

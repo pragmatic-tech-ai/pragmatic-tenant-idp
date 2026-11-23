@@ -186,10 +186,12 @@ describe('the upstream notice', () =>
     {
         const marked = LoginPageLocation.From('https://login.test', '/realms/staff/protocol/openid-connect/auth', '?client_id=c1&prompt=login%20create&pragmatic_notice=domain.google')
         assert.equal(marked.Request, 'client_id=c1&prompt=login+create')
+        assert.equal(marked.CarriedNotice, true)
         assert.equal(marked.PromptsCreate, true)
         assert.equal(marked.WithRequest('client_id=c2&pragmatic_notice=incomplete').Request, 'client_id=c2')
         const plain = LoginPageLocation.From('https://login.test', '/realms/staff/protocol/openid-connect/auth', '?client_id=c1&prompt=login%20create')
         assert.equal(plain.Request, 'client_id=c1&prompt=login%20create', 'unchanged without a marker')
+        assert.equal(plain.CarriedNotice, false)
     })
 
     it('parses a source\'s hosted domain from the config', () =>

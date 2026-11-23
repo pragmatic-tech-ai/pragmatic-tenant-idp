@@ -38,11 +38,14 @@ routes; in a hive the host serves TLS itself (`AppHostConfig.Tls`, the `IdpTlsId
   `/_admin/realms/<realm>/...`; sign-in app assets `/_login/`.
 - **Realms and sources.** `RealmSettings` (`realm-settings.ts`) from a realm's configuration (descriptor
   `TenantIdpComponent`, option names in `TenantIdpOptions`): `TokenPolicy`, `LocalPolicy`, `UpstreamSourceSettings`
-  (Google / Entra / generic OIDC / Pragmatic -> `UpstreamOidcSource`; its `Complete` answers an `UpstreamSignIn` or a
-  typed `UpstreamRefusal` carrying the authorize request whenever the state was valid, which the broker callback turns
-  into a redirect back to the sign-in page with a `LoginNotice` marker, else `SignInFailurePage`) and `IdentityPlatformSourceSettings` (->
+  (Google / Entra / generic OIDC / Pragmatic -> `UpstreamOidcSource`) and `IdentityPlatformSourceSettings` (->
   `IdentityPlatformSource`). `IdpRealm` holds the local accounts (SQL identity stores, password hashes in the realm's
   `SqlSecretStore` scope `tenant-idp/<realm>`), profiles and federated links (`SqlIdpFederatedAccounts`).
+- **Upstream refusals.** `UpstreamOidcSource.Complete` answers an `UpstreamSignIn` or a typed `UpstreamRefusal`
+  (`UpstreamRefusalReason`), which carries the realm's authorize request whenever the state was one this source began.
+  The broker callback turns a refusal with a request into a redirect back to the sign-in page with a `LoginNotice`
+  marker (`pragmatic_notice`, stripped by `AuthorizeRequest.Validate`); without one it answers `SignInFailurePage`
+  (static HTML, 401). Google sources ask for the account chooser (`prompt=select_account`, and `hd` with a hosted domain).
 - **Clients.** `OidcClient` (`clients/oidc-client.ts`) has a `ClientKind` (`confidential` | `public`) and an optional
   resource audience. Registered clients (admin API, `SqlIdpClientStore`) are confidential; `SeededClients`
   (`clients/seeded-clients.ts`) are the service's own, consulted before the store, never stored, reserved in the admin

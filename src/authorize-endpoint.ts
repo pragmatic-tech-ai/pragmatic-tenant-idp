@@ -79,8 +79,12 @@ export class SignInEndpoints
     private static readonly StatusNotFound = 404;
     private static readonly StatusTooMany = 429;
     private static readonly LoginBodyLimit = 32 * 1024;
-    private static readonly NoName = '';
-    private static readonly NoValue = '';
+    private static readonly NoText = '';
+    /** The notice the sign-in page shows for each way an upstream source refuses (every reason has one). */
+    private static readonly NoticeOf: ReadonlyMap<UpstreamRefusalReason, LoginNoticeReason> = new Map([
+        [UpstreamRefusalReason.WrongDomain, LoginNoticeReason.Domain],
+        [UpstreamRefusalReason.Incomplete, LoginNoticeReason.Incomplete],
+    ]);
 
     public constructor(
         private readonly realms: IdpRealmSet,
@@ -211,8 +215,8 @@ export class SignInEndpoints
             ctx.WriteJson(S.StatusUnauthorized, { [S.ErrorField]: S.InvalidCredentials });
             return;
         }
-        const email = token.Email ?? S.NoName;
-        const name = token.DisplayName ?? S.NoName;
+        const email = token.Email ?? S.NoText;
+        const name = token.DisplayName ?? S.NoText;
         const accountId = await realm.LinkUpstream(RealmSourceKind.IdentityPlatform, token.Uid, email, name);
         if (!(await realm.IsActive(accountId)))
         {
@@ -276,7 +280,7 @@ export class SignInEndpoints
         const source = realm?.Upstream(ctx.Param(S.SourceParam));
         const code = ctx.Query.get(S.CodeParam);
         const state = ctx.Query.get(S.StateParam);
-        const upstream = realm === undefined || source === undefined || state === null || state === S.NoValue ? undefined : await source.Complete(code === null || code === S.NoValue ? undefined : code, state);
+        const upstream = realm === undefined || source === undefined || state === null || state === S.NoText ? undefined : await source.Complete(code === null || code === S.NoText ? undefined : code, state);
         const carried = upstream?.AuthorizeRequest === undefined ? undefined : IdpBrokerBinding.Parse(upstream.AuthorizeRequest);
         const bound = carried !== undefined && IdpBrokerBinding.Admits(ctx.Request.headers.cookie, carried);
         const request = carried === undefined || !bound ? undefined : await AuthorizeRequest.Validate(realm, this.clients, carried.AuthorizeRequest);
@@ -291,7 +295,7 @@ export class SignInEndpoints
         }
         if (upstream instanceof UpstreamRefusal)
         {
-            this.ReturnToPage(ctx, realm, request, source, upstream.Reason === UpstreamRefusalReason.WrongDomain ? LoginNoticeReason.Domain : LoginNoticeReason.Incomplete);
+            this.ReturnToPage(ctx, realm, request, source, S.NoticeOf.get(upstream.Reason) ?? LoginNoticeReason.Incomplete);
             return;
         }
         const subject = upstream.Principal.Id;
@@ -387,6 +391,7 @@ export class SignInEndpoints
 export class LoginConfig
 {
     private static readonly NoPage = null;
+    private static readonly NoDomain = null;
     private static readonly RealmField = 'realm';
     private static readonly DisplayNameField = 'displayName';
     private static readonly LocalField = 'local';
@@ -417,7 +422,7 @@ export class LoginConfig
                 [L.KindField]: source.Settings.Kind,
                 [L.LabelField]: source.Label,
                 [L.LoginField]: SignInEndpoints.BrokerLoginPath(issuerPath, source.Id),
-                [L.HostedDomainField]: source.HostedDomain ?? L.NoPage,
+                [L.HostedDomainField]: source.HostedDomain ?? L.NoDomain,
             })),
             [L.IdentityPlatformField]: realm.IdentityPlatform === undefined ? L.NoPage : realm.IdentityPlatform.PageConfig().ToJson(),
             [L.SignUpField]: realm.Settings.OffersSignUp,

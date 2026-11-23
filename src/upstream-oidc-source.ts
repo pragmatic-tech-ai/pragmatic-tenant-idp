@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { AuthMethod, AuthenticatedResult, Credential, DelegationDepth, IdentityConfig, PresentedSecret, Realm, RealmKind, type ISecretStore, type Principal, RealmIssuer } from '@pragmatic-tech-ai/pragmatic-identity';
 import { ClaimArrayGroupStrategy, ClaimsMapper, GenericOidcProfile, JwksCache, OidcAuthenticator, OidcDiscovery, OidcHttpClients, OidcResolvedConfig, OidcSettingKeys, type IHttpClient, type IOidcFlowStateStore, type OidcFlowState, type OidcProviderProfile } from '@pragmatic-tech-ai/pragmatic-identity-source-oidc';
 import { GoogleIdentityProfile } from '@pragmatic-tech-ai/pragmatic-identity-source-google';
@@ -32,14 +33,21 @@ class UpstreamClientSecret implements ISecretStore
     }
 }
 
-/**
- * The flow-state store as the authenticator sees it, remembering what each callback's `Take` handed back until the
- * callback claims it: the authenticator drops the carried return path on any rejection after the state was taken (a
- * failed code exchange, a bad token), and the realm still needs it to send the person back to its sign-in page.
- */
-class ReturnPathCapture implements IOidcFlowStateStore
+/** What one callback's flow-state `Take` handed back (the flow, when this call took one). */
+class TakenFlow
 {
-    private readonly taken = new Map<string, string | null>();
+    public Flow: OidcFlowState | undefined = undefined;
+}
+
+/**
+ * The flow-state store as the authenticator sees it, handing what a callback's `Take` returned to that callback alone
+ * (an async-local scope per call, so concurrent callbacks never see each other's flow): the authenticator drops the
+ * carried return path on any rejection after the state was taken (a failed code exchange, a bad token), and the realm
+ * still needs it to send the person back to its sign-in page.
+ */
+class FlowCapture implements IOidcFlowStateStore
+{
+    private readonly scope = new AsyncLocalStorage<TakenFlow>();
 
     public constructor(private readonly inner: IOidcFlowStateStore)
     {
@@ -53,19 +61,20 @@ class ReturnPathCapture implements IOidcFlowStateStore
     public async Take(state: string): Promise<OidcFlowState | null>
     {
         const flow = await this.inner.Take(state);
-        if (flow !== null)
+        const taken = this.scope.getStore();
+        if (flow !== null && taken !== undefined)
         {
-            this.taken.set(state, flow.ReturnPath);
+            taken.Flow = flow;
         }
         return flow;
     }
 
-    /** The return path the flow taken for `state` carried (once; undefined when none was taken or it had none). */
-    public Claim(state: string): string | undefined
+    /** Runs `work` with its own record of the flow it takes. */
+    public async Capture<T>(work: () => Promise<T>): Promise<{ Result: T; Taken: OidcFlowState | undefined }>
     {
-        const path = this.taken.get(state);
-        this.taken.delete(state);
-        return path ?? undefined;
+        const taken = new TakenFlow();
+        const result = await this.scope.run(taken, work);
+        return { Result: result, Taken: taken.Flow };
     }
 }
 
@@ -133,10 +142,14 @@ export class UpstreamOidcSource
     ]);
     private static readonly WellKnownSuffix = '/.well-known/openid-configuration';
     private static readonly NoLabel = '';
+    private static readonly PromptParam = 'prompt';
+    private static readonly SelectAccount = 'select_account';
+    private static readonly HostedDomainParam = 'hd';
 
     private readonly authenticator: OidcAuthenticator;
     private readonly realm: Realm;
-    private readonly flowStates: ReturnPathCapture;
+    private readonly flowStates: FlowCapture;
+    private readonly callbackUri: string;
 
     private constructor(
         public readonly Settings: UpstreamSourceSettings,
@@ -150,13 +163,14 @@ export class UpstreamOidcSource
     {
         const U = UpstreamOidcSource;
         this.realm = new Realm(realmId, RealmKind.SelfHosted, realmId);
-        this.flowStates = new ReturnPathCapture(flowStates);
+        this.flowStates = new FlowCapture(flowStates);
+        this.callbackUri = RealmIssuer.BrokerCallbackOf(issuer, Settings.Id);
         const scopes = profile.DefaultScopes;
         const resolved = new OidcResolvedConfig(
             profile.ResolveDiscoveryUrl(providerSettings),
             profile.ResolveIssuer(providerSettings),
             Settings.ClientId,
-            RealmIssuer.BrokerCallbackOf(issuer, Settings.Id),
+            this.callbackUri,
             scopes,
             UpstreamClientSecret.Reference,
             profile.ClientSecretParam);
@@ -191,10 +205,25 @@ export class UpstreamOidcSource
         return this.Settings.Label ?? UpstreamOidcSource.DefaultLabels.get(this.Settings.Kind) ?? UpstreamOidcSource.NoLabel;
     }
 
-    /** The upstream authorize URL; the realm's authorize request (its query) travels in the flow state. */
+    /**
+     * The upstream authorize URL; the realm's authorize request (its query) travels in the flow state. Google is asked
+     * to show its account chooser every time (`prompt=select_account`), so "Choose another account" after a refusal
+     * never signs the same remembered account straight back in, and, with a hosted domain, to offer that domain's
+     * accounts (`hd`, a hint only: the ID token's `hd` is still checked on the way back).
+     */
     public async Begin(authorizeRequest: string): Promise<string>
     {
-        return (await this.authenticator.BeginAuthorization(this.realm, { ReturnPath: authorizeRequest })).Url;
+        const U = UpstreamOidcSource;
+        const url = new URL((await this.authenticator.BeginAuthorization(this.realm, { ReturnPath: authorizeRequest })).Url);
+        if (this.Settings.Kind === RealmSourceKind.Google)
+        {
+            url.searchParams.set(U.PromptParam, U.SelectAccount);
+            if (this.Settings.HostedDomain !== undefined)
+            {
+                url.searchParams.set(U.HostedDomainParam, this.Settings.HostedDomain);
+            }
+        }
+        return url.toString();
     }
 
     /** The source's Google Workspace domain, when it admits only that one. */
@@ -213,18 +242,16 @@ export class UpstreamOidcSource
         const U = UpstreamRefusalReason;
         if (code === undefined)
         {
-            const flow = await this.flowStates.Take(state);
-            this.flowStates.Claim(state);
-            return new UpstreamRefusal(U.Incomplete, flow?.ReturnPath ?? undefined);
+            const { Taken } = await this.flowStates.Capture(() => this.flowStates.Take(state));
+            return new UpstreamRefusal(U.Incomplete, this.ReturnPathOf(Taken));
         }
         const presented = new PresentedSecret(code);
         try
         {
-            const outcome = await this.authenticator.AuthenticateWithTokens(new Credential(AuthMethod.Oidc, state), presented, this.realm);
-            const carried = this.flowStates.Claim(state);
-            if (!(outcome.Result instanceof AuthenticatedResult) || outcome.ReturnPath === null)
+            const { Result: outcome, Taken } = await this.flowStates.Capture(() => this.authenticator.AuthenticateWithTokens(new Credential(AuthMethod.Oidc, state), presented, this.realm));
+            if (!(outcome.Result instanceof AuthenticatedResult) || outcome.ReturnPath === null || Taken?.RedirectUri !== this.callbackUri)
             {
-                return new UpstreamRefusal(U.Incomplete, carried);
+                return new UpstreamRefusal(U.Incomplete, this.ReturnPathOf(Taken));
             }
             if (!this.Admits(outcome.Result.Principal))
             {
@@ -234,9 +261,17 @@ export class UpstreamOidcSource
         }
         finally
         {
-            this.flowStates.Claim(state);
             presented.Clear();
         }
+    }
+
+    /**
+     * The realm's authorize request a taken flow carried, only when this source began it (the flow store is the
+     * realm's, shared by its sources: a state of another source, taken here, is spent but recovers nothing).
+     */
+    private ReturnPathOf(flow: OidcFlowState | undefined): string | undefined
+    {
+        return flow === undefined || flow.RedirectUri !== this.callbackUri ? undefined : flow.ReturnPath ?? undefined;
     }
 
     /** A Google source with a hosted domain admits only accounts of it (the profile turns `hd` into the one group). */

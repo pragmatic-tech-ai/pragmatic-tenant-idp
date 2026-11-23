@@ -432,6 +432,12 @@ export class IdpLoginViewModel extends Observable
         {
             this.page = this.location.WithRequest(pending.Request)
         }
+        // The notice marker served its purpose: drop it from the address bar, so a reload or a bookmark
+        // shows no stale banner.
+        if (this.location.CarriedNotice && !this.location.IsFederatedReturn)
+        {
+            this.navigator.Replace(this.location.AuthorizeUrl)
+        }
         try
         {
             this.config = await this.backend.LoadConfig()

@@ -395,9 +395,16 @@ describe('IdP sign-in page: the banner after an upstream source sent the person 
         assert.equal(fixture.Page.BannerText, '')
     })
 
+    it('drops the marker from the address bar once read, so a reload shows no stale banner', async () =>
+    {
+        const fixture = await LoginFixture.Noticed(new LoginNotice(LoginNoticeReason.Domain, 'google'))
+        assert.deepEqual(fixture.Navigator.Replaced, [LoginFixture.Origin + LoginFixture.AuthorizePath + '?' + LoginFixture.Request])
+    })
+
     it('a page without a notice shows no banner', async () =>
     {
         const fixture = await LoginFixture.Loaded(LoginFixture.Local([GoogleSource]))
         assert.equal(fixture.Page.BannerText, '')
+        assert.deepEqual(fixture.Navigator.Replaced, [], 'nothing to drop without a marker')
     })
 })

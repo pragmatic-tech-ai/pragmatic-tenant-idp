@@ -91,6 +91,13 @@ export class FakeNavigator implements IPageNavigator
     {
         this.Visits.push(url)
     }
+
+    public readonly Replaced: string[] = []
+
+    public Replace(url: string): void
+    {
+        this.Replaced.push(url)
+    }
 }
 
 export class MemoryStorage implements IRoundTripStorage

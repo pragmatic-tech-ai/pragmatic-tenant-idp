@@ -28,7 +28,9 @@ export class LoginPageLocation
         public readonly IssuerPath: string,
         public readonly Request: string,
         /** The page's full URL as the browser shows it (what a federated provider answered to). */
-        public readonly Href: string)
+        public readonly Href: string,
+        /** True when the page's query carried the IdP's notice marker (dropped from Request). */
+        public readonly CarriedNotice: boolean = false)
     {
     }
 
@@ -45,7 +47,8 @@ export class LoginPageLocation
         const L = LoginPageLocation
         const issuer = pathname.endsWith(L.AuthorizeSuffix) ? pathname.slice(0, pathname.length - L.AuthorizeSuffix.length) : pathname
         const request = search.startsWith(L.QueryMark) ? search.slice(1) : search
-        return new LoginPageLocation(origin, issuer, L.WithoutNotice(request), href)
+        const stripped = L.WithoutNotice(request)
+        return new LoginPageLocation(origin, issuer, stripped, href, stripped !== request)
     }
 
     public static FromWindow(): LoginPageLocation
@@ -62,7 +65,7 @@ export class LoginPageLocation
     // The same page under the realm the round trip began in.
     public WithIssuer(issuerPath: string): LoginPageLocation
     {
-        return new LoginPageLocation(this.Origin, issuerPath, this.Request, this.Href)
+        return new LoginPageLocation(this.Origin, issuerPath, this.Request, this.Href, this.CarriedNotice)
     }
 
     // The same page for another authorize request (the original one, restored after a round trip).
