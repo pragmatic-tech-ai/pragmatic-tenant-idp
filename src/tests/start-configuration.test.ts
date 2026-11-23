@@ -51,14 +51,13 @@ class ExitRecorder implements IStartProcess
 
 describe('the realm sign-in service reads its core configuration at start', () =>
 {
-    const Core = { baseUrl: 'https://idp.configured.test', port: 7443, databaseUrl: 'secret:file/db-url', adminToken: 'secret:file/admin-tokens' };
+    const Core = { baseUrl: 'https://idp.configured.test', port: 7443, adminToken: 'secret:file/admin-tokens' };
 
     it('a mounted configuration overrides the declared variable before the settings are read', async () =>
     {
         await IdpStart.InFolder(async folder =>
         {
             const env = IdpStart.Env(await IdpStart.Configuration(folder, Core));
-            await writeFile(join(folder, 'db-url'), 'postgres://x');
             await writeFile(join(folder, 'admin-tokens'), 'token-a\ntoken-b\n');
             await ComponentStartConfiguration.Apply({ Declaration: TenantIdpComponent.Declaration, Env: env, Stores: ComponentStartConfiguration.Stores('', folder), SecretsDir: join(folder, 'run') });
             assert.deepEqual([env.PRAGMATIC_IDP_BASE_URL, env.PRAGMATIC_IDP_PORT], ['https://idp.configured.test', '7443']);

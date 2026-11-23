@@ -5,26 +5,26 @@ import { RealmSourceKind, TenantIdpOptions as O } from './tenant-idp-options.js'
  * The component descriptor of the realm sign-in service image (`pragmatic-tenant-idp`). `core` is what `IdpMain` reads
  * from its environment (the container); the other options are a realm's configuration document (one per realm, read
  * at start from its applied configuration file): token lifetimes and the realm's identity sources, every secret a
- * `SecretReference`. It stores in its own Postgres (A5).
+ * `SecretReference`. It stores in its own Postgres (A5); the database URL (a mounted secret file) is the platform's, injected
+ * by the manifests and left out of the descriptor, so no configuration can point the service at another database.
  */
 export class TenantIdpComponent
 {
     public static readonly Name = 'pragmatic-tenant-idp';
     /** The descriptor version: this application's package version (the release test pins it to package.json). */
-    public static readonly Version = '0.2.1';
+    public static readonly Version = '0.2.2';
 
     private static readonly Core: OptionDeclaration = {
         name: O.Core,
         description: 'The container: where it listens, its secret files and its database.',
         settings: [
-            { name: 'baseUrl', type: SettingType.Url, source: 'PRAGMATIC_IDP_BASE_URL', required: true, description: 'The browser-facing https origin; a realm\'s issuer is <baseUrl>/realms/<realm>.' },
+            { name: 'baseUrl', type: SettingType.Url, source: 'PRAGMATIC_IDP_BASE_URL', description: 'The browser-facing https origin; a realm\'s issuer is <baseUrl>/realms/<realm>.' },
             { name: 'internalUrl', type: SettingType.Url, source: 'PRAGMATIC_IDP_INTERNAL_URL', description: 'The in-cluster https origin of the token, key and revocation endpoints, when it differs from baseUrl.' },
             { name: 'host', type: SettingType.String, source: 'PRAGMATIC_IDP_HOST', default: '127.0.0.1', description: 'Address the listener binds.' },
             { name: 'port', type: SettingType.Integer, source: 'PRAGMATIC_IDP_PORT', default: 7100, description: 'Port the listener binds.' },
             { name: 'tls', type: SettingType.Boolean, source: 'PRAGMATIC_IDP_TLS', default: true, description: 'Whether the service terminates TLS itself (false behind a TLS-terminating proxy).' },
             { name: 'trustedProxy', type: SettingType.Boolean, source: 'PRAGMATIC_IDP_TRUSTED_PROXY', default: false, description: 'Whether to honour the last x-forwarded-for / x-forwarded-proto hop (behind a reverse proxy).' },
             { name: 'dataDir', type: SettingType.String, source: 'PRAGMATIC_IDP_DATA', description: 'The secret files folder (signing key, master key, TLS, admin tokens; pre-A5 data to import); defaults to data beside the code.' },
-            { name: 'databaseUrl', type: SettingType.String, source: 'PRAGMATIC_IDP_DATABASE_URL_FILE', required: true, secret: true, description: 'The URL of the service\'s own Postgres database, where every record lives (a mounted secret file).' },
             { name: 'secureCookie', type: SettingType.Boolean, source: 'PRAGMATIC_IDP_SECURE_COOKIE', default: true, description: 'Whether session cookies are Secure (false or 0 turns it off).' },
             { name: 'adminToken', type: SettingType.String, source: 'PRAGMATIC_IDP_ADMIN_TOKEN_REF', secret: true, description: 'The admin API tokens (PRAGMATIC_IDP_ADMIN_TOKEN_REF names their file under the data folder secrets).' },
             { name: 'loginDir', type: SettingType.String, source: 'PRAGMATIC_IDP_LOGIN_DIR', description: 'Folder of the built sign-in app (defaults to idp-login/dist beside the code).' },

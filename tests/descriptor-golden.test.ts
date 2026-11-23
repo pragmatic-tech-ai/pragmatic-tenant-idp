@@ -17,7 +17,7 @@ class DescriptorGoldenFixture
 {
     private static readonly Here = dirname(fileURLToPath(import.meta.url));
     /** The digest of the fixture (also pinned by src/tests/tenant-idp-component.test.ts). */
-    public static readonly Digest = 'sha256:b471c1f60f919a8c8393b72950fe2e83ad58d65fbd225feae8fdcc81bb9e0b0a';
+    public static readonly Digest = 'sha256:648e382ed8df87b19c701cfc99701af94f96bf7225e7cc763f309d92ef6f933f';
     public static readonly Golden = join(DescriptorGoldenFixture.Here, '..', 'src', 'tests', 'fixtures', 'pragmatic-tenant-idp.component.json');
     private static readonly PackageJson = join(DescriptorGoldenFixture.Here, '..', 'package.json');
     private static readonly Utf8 = 'utf8';

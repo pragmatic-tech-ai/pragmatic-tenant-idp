@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "component": "pragmatic-tenant-idp",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "options": [
     {
       "name": "core",
@@ -10,7 +10,7 @@
         {
           "name": "baseUrl",
           "type": "url",
-          "required": true,
+          "required": false,
           "secret": false,
           "description": "PRAGMATIC_IDP_BASE_URL: The browser-facing https origin; a realm's issuer is <baseUrl>/realms/<realm>."
         },
@@ -59,13 +59,6 @@
           "required": false,
           "secret": false,
           "description": "PRAGMATIC_IDP_DATA: The secret files folder (signing key, master key, TLS, admin tokens; pre-A5 data to import); defaults to data beside the code."
-        },
-        {
-          "name": "databaseUrl",
-          "type": "string",
-          "required": true,
-          "secret": true,
-          "description": "PRAGMATIC_IDP_DATABASE_URL_FILE: The URL of the service's own Postgres database, where every record lives (a mounted secret file)."
         },
         {
           "name": "secureCookie",
