@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { AppliedConfiguration, AppliedConfigurationEntries, SecretStoreDirectory, type ISecretSource, type IStartProcess } from '@pragmatic-tech-ai/pragmatic-configuration';
+import { dirname, join } from 'node:path';
+import { AppliedConfiguration, AppliedConfigurationEntries, ComponentStartConfiguration, ConfigurationRuntimeReader, SecretStoreDirectory, type ISecretSource, type IStartProcess } from '@pragmatic-tech-ai/pragmatic-configuration';
 import { K8sManifestBuilder, type IdpWorkloadSpec } from '@pragmatic-tech-ai/pragmatic-tenant-plane';
 import { IdpMain } from '../idp-main.js';
 import { RealmConfigurationReader, type IRealmSecretsHome } from '../realm-configuration-reader.js';
@@ -42,7 +42,7 @@ class ExitRecorder implements IStartProcess
     public exit(code: number): never
     {
         this.Code = code;
-        throw new Error('exit ' + code);
+        throw new Error('exit ' + code + ': ' + this.Text);
     }
 }
 
@@ -57,10 +57,13 @@ class LiveRealm
         database: { image: 'pragmatic-postgres', secretName: 'pragmatic-idp-pragmatic-001-postgres' },
     };
 
+    public static readonly AdminToken = 'admin-token-value-91f0';
+
     public static Document(): Record<string, unknown>
     {
         return {
             options: {
+                core: { adminToken: 'secret:file/admin-token' },
                 google: { clientId: '182218337909-x.apps.googleusercontent.com', clientSecret: 'secret:realm/google-client-secret', hostedDomain: 'pragmatic-tech.ai' },
                 local: { lockout: '15m', maxAttempts: 5 },
                 tokens: { accessTokenLifetime: '10m', idTokenLifetime: '5m', refreshTokenIdleLifetime: '7d', refreshTokenMaxLifetime: '30d', ssoSessionLifetime: '12h' },
@@ -80,7 +83,8 @@ class LiveRealm
         }
         assert.ok(env.PRAGMATIC_IDP_SECRETS_DIR !== undefined, 'the builder renders the IdP secrets folder');
         env.PRAGMATIC_IDP_SECRETS_DIR = join(folder, 'store');
-        env.PRAGMATIC_CONFIGURATION_FILE = join(folder, 'configuration.json');
+        env.PRAGMATIC_CONFIGURATION_FILE = join(folder, 'mount', 'configuration.json');
+        env.PRAGMATIC_IDP_CONFIGURATION_DIR = join(folder, 'mount');
         return env;
     }
 
@@ -91,8 +95,12 @@ class LiveRealm
         const old = new AppliedConfiguration(L.Realm, TenantIdpComponent.Name, 3, '0.2.0', `sha256:${'0'.repeat(64)}`, L.Document() as never);
         const own = TenantIdpComponent.Descriptor();
         const entry = new AppliedConfiguration(L.Realm, own.Name, 1, own.Version, own.ContentDigest(), L.Document() as never);
-        await writeFile(join(folder, 'configuration.json'), old.ToCanonicalJson());
-        await writeFile(join(folder, AppliedConfigurationEntries.KeyOf(entry.DescriptorDigest)), entry.ToCanonicalJson());
+        await mkdir(join(folder, 'mount'));
+        await writeFile(join(folder, 'mount', 'configuration.json'), old.ToCanonicalJson());
+        await writeFile(join(folder, 'mount', AppliedConfigurationEntries.KeyOf(entry.DescriptorDigest)), entry.ToCanonicalJson());
+        // The component's own Secret, as mounted at /run/secrets/pragmatic/<component> (store `file`).
+        await mkdir(join(folder, 'component', TenantIdpComponent.Name), { recursive: true });
+        await writeFile(join(folder, 'component', TenantIdpComponent.Name, 'admin-token'), L.AdminToken);
     }
 
     public static Secrets(): IRealmSecretsHome
@@ -111,11 +119,17 @@ describe('the realm sign-in service starts on a realm configuration whose secret
             await LiveRealm.Mount(folder);
             const env = LiveRealm.Env(folder);
             const process = new ExitRecorder();
-            await IdpMain.StartConfiguration(env, process);
+            await IdpMain.StartConfiguration(env, process, ComponentStartConfiguration.Stores(TenantIdpComponent.Name, join(folder, 'component')), join(folder, 'run'));
             assert.equal(process.Code, undefined, 'the start was refused: ' + process.Text);
-            const realms = await new RealmConfigurationReader(TenantIdpComponent.Descriptor(), LiveRealm.Secrets()).ReadDirectory(folder);
+            // The sourced core secret went to its file, behind its _FILE variable.
+            assert.equal(await readFile(env.PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE as string, 'utf8'), LiveRealm.AdminToken);
+            // The realm reader reads the folder the service derives (the start step's mount by default), with the realm store
+            // alone: it resolves the realm options' secrets, never the core one the start step resolved.
+            assert.equal(IdpMain.ConfigurationDirOf({}), dirname(ConfigurationRuntimeReader.DefaultPath));
+            const realms = await new RealmConfigurationReader(TenantIdpComponent.Descriptor(), LiveRealm.Secrets()).ReadDirectory(IdpMain.ConfigurationDirOf(env));
             assert.deepEqual(realms.map(r => r.RealmId), [LiveRealm.Realm]);
             assert.equal(realms[0].Configuration.Secret('google', 'clientSecret')?.Reveal(), LiveRealm.Secret);
+            assert.equal(realms[0].Configuration.Secret('core', 'adminToken'), undefined);
         }
         finally
         {

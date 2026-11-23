@@ -1,4 +1,4 @@
-import { ComponentStartConfiguration, type IStartProcess } from '@pragmatic-tech-ai/pragmatic-configuration';
+import { ComponentStartConfiguration, type IStartProcess, type SecretStoreDirectory } from '@pragmatic-tech-ai/pragmatic-configuration';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
@@ -84,9 +84,15 @@ export class IdpMain
 
     /** The start step over `env`: the applied configuration's `core` options onto the variables they name (exit 78 when
      *  it refuses the start). The realm options and their secrets (the realm store) are RealmConfigurationReader's. */
-    public static async StartConfiguration(env: NodeJS.ProcessEnv, process?: IStartProcess): Promise<void>
+    public static async StartConfiguration(env: NodeJS.ProcessEnv, process?: IStartProcess, stores?: SecretStoreDirectory, secretsDir?: string): Promise<void>
     {
-        await ComponentStartConfiguration.ApplyOrExit({ Declaration: TenantIdpComponent.Declaration, Env: env }, process);
+        await ComponentStartConfiguration.ApplyOrExit({ Declaration: TenantIdpComponent.Declaration, Env: env, Stores: stores, SecretsDir: secretsDir }, process);
+    }
+
+    /** The folder the realms' applied configuration files are read from (the start step's mount by default). */
+    public static ConfigurationDirOf(env: NodeJS.ProcessEnv): string
+    {
+        return IdpMain.Optional(env[IdpMain.ConfigurationDirEnvVar]) ?? IdpMain.DefaultConfigurationDir;
     }
 
     /** Builds every collaborator from the environment and returns a not-yet-listening service. */
@@ -121,7 +127,7 @@ export class IdpMain
         await TenantIdpImport.ImportIfPending(db, data, masterKey);
         const secretsDir = M.Optional(env[M.SecretsDirEnvVar]);
         const reader = new RealmConfigurationReader(TenantIdpComponent.Descriptor(), new TenantIdpSecretsHome(db, masterKey, secretsDir));
-        const configurations: RealmConfiguration[] = [...await reader.ReadDirectory(M.Optional(env[M.ConfigurationDirEnvVar]) ?? M.DefaultConfigurationDir)];
+        const configurations: RealmConfiguration[] = [...await reader.ReadDirectory(M.ConfigurationDirOf(env))];
         const bootstrap = M.Optional(env[M.BootstrapRealmEnvVar]);
         if (bootstrap !== undefined)
         {

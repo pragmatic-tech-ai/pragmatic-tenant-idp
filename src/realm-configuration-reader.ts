@@ -1,7 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ConfigurationValidator, type ComponentDescriptor } from '@pragmatic-tech-ai/pragmatic-component';
-import { AppliedConfigurationCodec, ConfigurationRuntimeReader, ConfigurationStartError, ConfigurationStartReason, RuntimeConfiguration, type SecretStoreDirectory, type SecretValue } from '@pragmatic-tech-ai/pragmatic-configuration';
+import { AppliedConfigurationCodec, ConfigurationRuntimeReader, ConfigurationStartError, ConfigurationStartReason, DeclaredSourceSecrets, RuntimeConfiguration, type ISecretSelection, type SecretStoreDirectory, type SecretValue } from '@pragmatic-tech-ai/pragmatic-configuration';
+import { TenantIdpComponent } from './tenant-idp-component.js';
 
 /** The secrets home a realm's references resolve through (its `realm` and `file` stores). */
 export interface IRealmSecretsHome
@@ -18,6 +19,18 @@ export class RealmConfiguration
         public readonly Configuration: RuntimeConfiguration)
     {
         Object.freeze(this);
+    }
+}
+
+/** The secrets the realm reader resolves: those of the realm's options, never a `core` setting the start step overlays
+ *  (DeclaredSourceSecrets), so each secret is resolved by exactly one reader, through the stores that one has. */
+export class RealmOptionSecrets implements ISecretSelection
+{
+    private readonly sourced = new DeclaredSourceSecrets(TenantIdpComponent.Declaration);
+
+    public Resolves(option: string, setting: string): boolean
+    {
+        return !this.sourced.Resolves(option, setting);
     }
 }
 
@@ -58,6 +71,8 @@ export class RealmConfigurationReader
     private static readonly MalformedBootstrap = 'the bootstrap realm file must be { realm, displayName?, configuration }: ';
     private static readonly InvalidBootstrap = 'the bootstrap realm configuration does not validate: ';
     private static readonly UnreadableBootstrap = 'cannot read the bootstrap realm file ';
+
+    private readonly selection = new RealmOptionSecrets();
 
     public constructor(private readonly descriptor: ComponentDescriptor, private readonly secrets: IRealmSecretsHome)
     {
@@ -103,7 +118,7 @@ export class RealmConfigurationReader
             // The reader reports the file's fault (missing, unreadable, malformed) in its own words.
             realm = RealmConfigurationReader.NoRealm;
         }
-        const reader = new ConfigurationRuntimeReader(this.descriptor, await this.secrets.DirectoryFor(realm));
+        const reader = new ConfigurationRuntimeReader(this.descriptor, await this.secrets.DirectoryFor(realm), false, this.selection);
         return new RealmConfiguration(realm, undefined, await reader.Read(path));
     }
 
@@ -136,6 +151,7 @@ export class RealmConfigurationReader
         const secrets = new Map<string, SecretValue>();
         for (const secret of validation.Configuration.SecretReferences())
         {
+            if (!this.selection.Resolves(secret.Option, secret.Setting)) continue;
             const where = secret.Option + R.WhereSeparator + secret.Setting;
             secrets.set(RuntimeConfiguration.SecretKey(secret.Option, secret.Setting), await directory.Resolve(secret.Reference, where));
         }
