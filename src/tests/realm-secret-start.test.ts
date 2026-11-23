@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { AppliedConfiguration, AppliedConfigurationEntries, ComponentStartConfiguration, ConfigurationRuntimeReader, SecretStoreDirectory, type ISecretSource, type IStartProcess } from '@pragmatic-tech-ai/pragmatic-configuration';
+import { AppliedConfiguration, AppliedConfigurationEntries, ComponentStartConfiguration, ConfigurationRuntimeReader, MountedSecretStore, SecretStoreDirectory, type ISecretSource, type IStartProcess } from '@pragmatic-tech-ai/pragmatic-configuration';
 import { K8sManifestBuilder, type IdpWorkloadSpec } from '@pragmatic-tech-ai/pragmatic-tenant-plane';
 import { IdpMain } from '../idp-main.js';
 import { RealmConfigurationReader, type IRealmSecretsHome } from '../realm-configuration-reader.js';
@@ -103,9 +103,14 @@ class LiveRealm
         await writeFile(join(folder, 'component', TenantIdpComponent.Name, 'admin-token'), L.AdminToken);
     }
 
-    public static Secrets(): IRealmSecretsHome
+    /** The realm secrets home as the service builds it: the realm store, and store `file` at PRAGMATIC_IDP_SECRETS_DIR. */
+    public static Secrets(env: NodeJS.ProcessEnv): IRealmSecretsHome
     {
-        return { DirectoryFor: async () => new SecretStoreDirectory().Add(TenantIdpSecretsHome.RealmStore, new RealmStore(new Map([['google-client-secret', LiveRealm.Secret]]))) };
+        return {
+            DirectoryFor: async () => new SecretStoreDirectory()
+                .Add(TenantIdpSecretsHome.RealmStore, new RealmStore(new Map([['google-client-secret', LiveRealm.Secret]])))
+                .Add(TenantIdpSecretsHome.FileStore, new MountedSecretStore(env.PRAGMATIC_IDP_SECRETS_DIR as string)),
+        };
     }
 }
 
@@ -126,7 +131,7 @@ describe('the realm sign-in service starts on a realm configuration whose secret
             // The realm reader reads the folder the service derives (the start step's mount by default), with the realm store
             // alone: it resolves the realm options' secrets, never the core one the start step resolved.
             assert.equal(IdpMain.ConfigurationDirOf({}), dirname(ConfigurationRuntimeReader.DefaultPath));
-            const realms = await new RealmConfigurationReader(TenantIdpComponent.Descriptor(), LiveRealm.Secrets()).ReadDirectory(IdpMain.ConfigurationDirOf(env));
+            const realms = await new RealmConfigurationReader(TenantIdpComponent.Descriptor(), LiveRealm.Secrets(env)).ReadDirectory(IdpMain.ConfigurationDirOf(env));
             assert.deepEqual(realms.map(r => r.RealmId), [LiveRealm.Realm]);
             assert.equal(realms[0].Configuration.Secret('google', 'clientSecret')?.Reveal(), LiveRealm.Secret);
             assert.equal(realms[0].Configuration.Secret('core', 'adminToken'), undefined);
