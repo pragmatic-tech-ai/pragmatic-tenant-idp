@@ -3,6 +3,7 @@ import type { OidcClient } from '../clients/oidc-client.js';
 import type { IdpRealm } from '../idp-realm.js';
 import type { IdpSigningKey } from '../idp-signing-key.js';
 import type { RealmSignIn } from '../realm-sign-in.js';
+import { JwtHeaderType } from './jwt-header-type.js';
 
 /** An access token and how long it is valid (the token answer's `expires_in`). */
 export class IssuedAccessToken
@@ -23,7 +24,6 @@ export class IssuedAccessToken
  */
 export class AccessTokenIssuer
 {
-    public static readonly AccessTokenType = 'at+jwt';
     private static readonly IssClaim = 'iss';
     private static readonly SubClaim = 'sub';
     private static readonly AudClaim = 'aud';
@@ -67,6 +67,6 @@ export class AccessTokenIssuer
             [A.EmailClaim]: signIn.Email,
             ...roleClaims,
         };
-        return new IssuedAccessToken(await this.signingKey.Sign(claims, A.AccessTokenType), lifetime);
+        return new IssuedAccessToken(await this.signingKey.Sign(claims, JwtHeaderType.AccessToken), lifetime);
     }
 }

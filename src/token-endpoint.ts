@@ -21,7 +21,7 @@ export class ProtocolReply
 /**
  * A client's credentials: `client_secret_basic` (RFC 6749 §2.3.1), `client_secret_post` fields, or `none` (a public
  * client: `client_id` in the form and no secret at all, RFC 8252 section 8.4). `Secret` is undefined only when the
- * request carried no secret in any form; a Basic header always counts as one (a public client may present none).
+ * request carried no credential in any form; any Authorization header counts as one (a public client may present none).
  */
 export class ClientCredentials
 {
@@ -50,7 +50,11 @@ export class ClientCredentials
             {
                 return new ClientCredentials(C.FormDecode(decoded.slice(0, colon)), C.FormDecode(decoded.slice(colon + 1)));
             }
-            // An unreadable Basic header is still a secret presented: never the `none` method.
+        }
+        if (authorization !== undefined)
+        {
+            // Any Authorization header (an unreadable Basic one, another scheme) is a credential presented: never `none`
+            // (RFC 6749 section 2.3: one authentication method per request).
             return new ClientCredentials(form.get(C.ClientIdField) ?? C.NoValue, form.get(C.ClientSecretField) ?? C.NoValue);
         }
         return new ClientCredentials(form.get(C.ClientIdField) ?? C.NoValue, form.get(C.ClientSecretField) ?? undefined);
@@ -72,11 +76,11 @@ export class ClientCredentials
 
 /**
  * `POST <issuer>/protocol/openid-connect/token` (form-encoded, RFC 6749 §3.2): the client authenticates by its kind (a
- * confidential client's secret; a public client's `none`, `ClientCredentials`); the authorization code grant (single-use
- * code, PKCE S256, the same redirect URI; the account still active and its credentials unchanged
- * since the sign-in) and the refresh token grant (a rotating token of the client: a refresh uses it up and answers the
- * next one; a reused token revokes its family; the account checked again and the roles resolved again). Every refusal
- * is `invalid_grant` / `invalid_client` / `unsupported_grant_type`, nothing more.
+ * confidential client's secret; a public client's `none`, `ClientCredentials`); the authorization code grant
+ * (single-use code, PKCE S256, the same redirect URI; the account still active and its credentials unchanged since the
+ * sign-in) and the refresh token grant (a rotating token of the client: a refresh uses it up and answers the next one;
+ * a reused token revokes its family; the account checked again and the roles resolved again). Every refusal is
+ * `invalid_grant` / `invalid_client` / `unsupported_grant_type`, nothing more.
  */
 export class TokenEndpoint
 {

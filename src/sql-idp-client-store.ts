@@ -67,14 +67,16 @@ export class SqlIdpClientStore
         return rotated;
     }
 
-    /** Writes a client with an existing secret hash (the importer of pre-A5 registrations); a seeded id is skipped. */
-    public async Restore(realmId: string, clientId: string, redirectUris: readonly string[], secretHash: string): Promise<void>
+    /** Writes a client with an existing secret hash (the importer of pre-A5 registrations); a seeded id is skipped
+     *  (false). */
+    public async Restore(realmId: string, clientId: string, redirectUris: readonly string[], secretHash: string): Promise<boolean>
     {
         if (SeededClients.IsSeeded(clientId))
         {
-            return;
+            return false;
         }
         await this.session.Execute(SqlIdpClientStore.RestoreSql, [realmId, clientId, SqlJson.Write([...redirectUris]), SqlJson.Write([]), secretHash, new Date()]);
+        return true;
     }
 
     /** The seeded client of that id, else the registered one. */
@@ -92,7 +94,7 @@ export class SqlIdpClientStore
     /** The registered clients of the realm (the seeded ones are not listed: nothing about them is the realm's). */
     public async List(realmId: string): Promise<readonly OidcClient[]>
     {
-        return (await this.session.Query(SqlIdpClientStore.ListSql, [realmId])).map(row => SqlIdpClientStore.ToClient(row));
+        return (await this.session.Query(SqlIdpClientStore.ListSql, [realmId])).map(row => SqlIdpClientStore.ToClient(row)).filter(client => !SeededClients.IsSeeded(client.ClientId));
     }
 
     /** Removes a registered client; returns whether it existed (a seeded client is never removed). */

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { createLocalJWKSet, decodeProtectedHeader, jwtVerify } from 'jose';
 import { RealmIssuer } from '@pragmatic-tech-ai/pragmatic-identity';
+import { ReservedClientError } from '../sql-idp-client-store.js';
 import { IdpTestFlow } from './idp-test-flow.js';
 import { RealmTestConfiguration } from './realm-test-configuration.js';
 import { TenantIdpTestHost } from './tenant-idp-test-host.js';
@@ -228,5 +229,44 @@ describe('the seeded public client plexus (S1) and its JWT access tokens (S2)', 
         const refused = await plexus.Refresh(mine.Tokens.refresh_token);
         assert.equal(refused.Status, 400);
         assert.equal(refused.Json().error, 'invalid_grant');
+    });
+
+    it('a seeded id is refused before the body is read, and the store never writes or lists it', async () =>
+    {
+        const invalid = await host.Admin('POST', F.Realm + '/clients', { clientId: F.ClientId });
+        assert.equal(invalid.Status, 409);
+        const clients = host.Service.Stores.Clients;
+        await assert.rejects(clients.Register(F.Realm, F.ClientId, ['https://evil.example/cb'], 'secret'), ReservedClientError);
+        assert.equal(await clients.Restore(F.Realm, F.ClientId, ['https://evil.example/cb'], 'hash'), false);
+        assert.equal(await clients.Restore(F.Realm, 'imported', ['https://imported.example/cb'], 'hash'), true);
+        await host.Session.Execute('INSERT INTO tenant_idp_clients (realm_id, client_id, redirect_uris, post_logout_redirect_uris, secret_hash, updated_at) VALUES ($1, $2, $3, $4, $5, $6)', [F.Other, F.ClientId, '["https://evil.example/cb"]', '[]', 'hash', new Date()]);
+        assert.deepEqual((await clients.List(F.Other)).map(client => client.ClientId), [], 'a stored row under a seeded id is never listed');
+        assert.equal((await clients.Find(F.Other, F.ClientId))?.IsPublic, true, 'nor found');
+        assert.equal(await clients.Remove(F.Other, F.ClientId), false);
+    });
+
+    it('a public client presenting any other credential is refused at token and revocation', async () =>
+    {
+        const signedIn = await plexus.SignIn(F.Email, F.Password);
+        const refresh = signedIn.Tokens.refresh_token as string;
+        const bearer = await host.Http.Send('POST', plexus.Issuer + RealmIssuer.TokenPath, { Form: { grant_type: 'refresh_token', refresh_token: refresh, client_id: F.ClientId }, Headers: { authorization: 'Bearer ' + signedIn.Tokens.access_token } });
+        assert.equal(bearer.Status, 401);
+        assert.equal(bearer.Json().error, 'invalid_client');
+        const emptySecret = await host.Http.Send('POST', plexus.Issuer + RealmIssuer.RevocationPath, { Form: { token: refresh, client_id: F.ClientId, client_secret: '' } });
+        assert.equal(emptySecret.Status, 401);
+        const basic = await host.Http.Send('POST', plexus.Issuer + RealmIssuer.RevocationPath, { Form: { token: refresh }, Headers: { authorization: 'Basic ' + Buffer.from(F.ClientId + ':').toString('base64') } });
+        assert.equal(basic.Status, 401);
+        assert.equal((await plexus.Refresh(refresh)).Status, 200, 'nothing was revoked or spent');
+    });
+
+    it('an access token is no id_token_hint: logout with one still asks to confirm', async () =>
+    {
+        const signedIn = await plexus.SignIn(F.Email, F.Password);
+        const hinted = await plexus.Logout(signedIn.Cookie, new URLSearchParams({ id_token_hint: signedIn.Tokens.access_token }).toString());
+        assert.equal(hinted.Status, 200);
+        assert.ok((hinted.Header('content-type') ?? '').startsWith('text/html'), 'the confirmation page');
+        assert.equal((await plexus.Authorize(plexus.Request(), signedIn.Cookie)).Status, 302, 'the SSO session is still live');
+        const idHinted = await plexus.Logout(signedIn.Cookie, new URLSearchParams({ id_token_hint: signedIn.Tokens.id_token }).toString());
+        assert.equal(idHinted.Json().signedOut, true, 'the ID token ends it at once');
     });
 });

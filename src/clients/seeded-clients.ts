@@ -13,23 +13,27 @@ export class SeededClients
     public static readonly PlexusRedirect = 'http://127.0.0.1/pragmatic-desktop/callback';
     /** The resource server Plexus's access tokens are for (their `aud`). */
     public static readonly TenantAdminAudience = 'pragmatic-tenant-admin';
-    private static readonly SeededIds: ReadonlySet<string> = new Set([SeededClients.PlexusClientId]);
     private static readonly NoSecret = '';
+    /** The one home of the seeded ids: each id and how its client of a realm is built. */
+    private static readonly Seeds: ReadonlyMap<string, (realmId: string) => OidcClient> = new Map([
+        [SeededClients.PlexusClientId, (realmId: string) => SeededClients.Plexus(realmId)],
+    ]);
 
     /** The seeded client of that id in the realm, or undefined when the id is not seeded. */
     public static Of(realmId: string, clientId: string): OidcClient | undefined
     {
-        const S = SeededClients;
-        if (clientId !== S.PlexusClientId)
-        {
-            return undefined;
-        }
-        return new OidcClient(S.PlexusClientId, realmId, [S.PlexusRedirect], [], S.NoSecret, ClientKind.Public, S.TenantAdminAudience);
+        return SeededClients.Seeds.get(clientId)?.(realmId);
     }
 
     /** Whether the id belongs to a seeded client (reserved: the admin API cannot register or remove it). */
     public static IsSeeded(clientId: string): boolean
     {
-        return SeededClients.SeededIds.has(clientId);
+        return SeededClients.Seeds.has(clientId);
+    }
+
+    private static Plexus(realmId: string): OidcClient
+    {
+        const S = SeededClients;
+        return new OidcClient(S.PlexusClientId, realmId, [S.PlexusRedirect], [], S.NoSecret, ClientKind.Public, S.TenantAdminAudience);
     }
 }

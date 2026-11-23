@@ -4,6 +4,7 @@ import { createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:cry
 import type { KeyObject } from 'node:crypto';
 import { SignJWT, calculateJwkThumbprint, jwtVerify } from 'jose';
 import type { JWK, JWTPayload } from 'jose';
+import type { JwtHeaderType } from './tokens/jwt-header-type.js';
 
 /**
  * RS256 signing key for the local OIDC identity provider. The private key is a
@@ -67,7 +68,7 @@ export class IdpSigningKey
     }
 
     /** Signs the claims; `type` sets the header's `typ` (an access token's `at+jwt`, RFC 9068), absent for an ID token. */
-    public async Sign(claims: Record<string, unknown>, type?: string): Promise<string>
+    public async Sign(claims: Record<string, unknown>, type?: JwtHeaderType): Promise<string>
     {
         const header = type === undefined ? { alg: IdpSigningKey.Algorithm, kid: this.kid } : { alg: IdpSigningKey.Algorithm, kid: this.kid, typ: type };
         return new SignJWT(claims)
@@ -76,15 +77,16 @@ export class IdpSigningKey
     }
 
     /**
-     * The payload of a token this key signed for `issuer`, expired or not (an `id_token_hint` is usually expired), or
-     * undefined when the signature, algorithm or issuer does not match.
+     * The payload of an ID token this key signed for `issuer`, expired or not (an `id_token_hint` is usually expired), or
+     * undefined when the signature, algorithm or issuer does not match, or the token is not an ID token (its header
+     * carries a `typ`: an access token, which a resource server may hold, never stands for an ID token).
      */
     public async VerifyOwn(token: string, issuer: string): Promise<JWTPayload | undefined>
     {
         try
         {
             const verified = await jwtVerify(token, createPublicKey(this.privateKey), { issuer, algorithms: [IdpSigningKey.Algorithm], currentDate: IdpSigningKey.Epoch });
-            return verified.payload;
+            return verified.protectedHeader.typ === undefined ? verified.payload : undefined;
         }
         catch
         {

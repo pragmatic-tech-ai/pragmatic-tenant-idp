@@ -11,10 +11,10 @@ signing key, master key, TLS and admin tokens are secret files in the data folde
   `node dist/bin/pragmatic-idpd.js` under `/workspace/pragmatic-tenant-idp`, port 7100 (`PRAGMATIC_IDP_PORT`), HTTPS
   health probe on `/healthz` (the certificate is issued for the public host, so the probe does not verify the peer).
 - The image (`Dockerfile`, `docker-bake.hcl`, rendered by `pragmatic-container-template` of
-  `@pragmatic-tech-ai/pragmatic-release-toolkit`) is multi-arch (linux/amd64 + linux/arm64), installs every package
-  from GitHub Packages through the lock, builds `idp-login` and copies its `dist` beside the compiled `dist`
-  (`IdpLoginPage` resolves `../idp-login/dist` from its module), keeps esbuild and typescript across the prune (TODL
-  declares both as runtime dependencies from 0.66.4 on), installs `openssl` (the CA tooling) and carries its component descriptor at
+  `@pragmatic-tech-ai/pragmatic-release-toolkit`) is multi-arch (linux/amd64 + linux/arm64), installs every package from
+  GitHub Packages through the lock, builds `idp-login` and copies its `dist` beside the compiled `dist` (`IdpLoginPage`
+  resolves `../idp-login/dist` from its module), keeps esbuild and typescript across the prune (TODL declares both as
+  runtime dependencies from 0.66.4 on), installs `openssl` (the CA tooling) and carries its component descriptor at
   `/pragmatic/component.json` with the digest as the label `ai.pragmatic-tech.component.digest`.
 - `closure.json` lists what the image copies; `npx pragmatic-closure-check` (package.json `pragmaticClosureCheck`)
   keeps it in step with what the entry reaches.
@@ -49,12 +49,13 @@ routes; in a hive the host serves TLS itself (`AppHostConfig.Tls`, the `IdpTlsId
 - **Sign-in and tokens.** `SignInEndpoints` (`authorize-endpoint.ts`), `SignInCompletion` (SSO session + single-use
   code), `TokenEndpoint` / `RevocationEndpoint` (`token-endpoint.ts`: client authentication by kind, code + PKCE,
   rotating refresh tokens with reuse detection; revocation only of the client's own tokens), `ProtocolEndpoints`
-  (discovery, JWKS, RP-initiated logout; token, keys and revocation named on the origin the document was read from,
-  base or internal), `RealmTokenIssuer` (ID token claims incl. `roles` / `app_roles` from `RealmRoleResolver` at every
-  issue) and `AccessTokenIssuer` (`tokens/access-token-issuer.ts`: an RFC 9068 `at+jwt` for a client with a resource
-  audience, `sid` = the refresh family, lifetime `tokens.accessTokenLifetime` 1m-60m; opaque otherwise). Stores: `SqlIdpClientStore`, `SqlIdpRealmCatalogue`,
-  `SqlIdpAccountProfiles`, `SqlAuthorizationCodeStore`, `SqlSsoSessionStore`, `SqlRefreshTokenStore` (migrations in
-  `tenant-idp-migrations.ts`), app-host throttles (`IdpLoginThrottles`) and audit.
+  (discovery, JWKS, RP-initiated logout; token, keys and revocation named on the origin the document was read from, base
+  or internal), `RealmTokenIssuer` (ID token claims incl. `roles` / `app_roles` from `RealmRoleResolver` at every issue)
+  and `AccessTokenIssuer` (`tokens/access-token-issuer.ts`: an RFC 9068 `at+jwt` for a client with a resource audience,
+  `sid` = the refresh family, lifetime `tokens.accessTokenLifetime` 1m-60m; opaque otherwise). Stores:
+  `SqlIdpClientStore`, `SqlIdpRealmCatalogue`, `SqlIdpAccountProfiles`, `SqlAuthorizationCodeStore`,
+  `SqlSsoSessionStore`, `SqlRefreshTokenStore` (migrations in `tenant-idp-migrations.ts`), app-host throttles
+  (`IdpLoginThrottles`) and audit.
 - **Admin API.** `IdpAdminEndpoint`: realms, accounts, password reset, clients, role mappings and assignable roles
   (`RoleMappingService`), applications (component descriptors; also fed from `PRAGMATIC_IDP_APPLICATIONS_DIR`), realm
   secrets.

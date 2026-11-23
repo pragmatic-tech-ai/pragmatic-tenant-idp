@@ -88,8 +88,10 @@ export class TenantIdpImport
         {
             for (const row of JSON.parse(readFileSync(clientsFile, I.Utf8)) as ClientRow[])
             {
-                await stores.Clients.Restore(row.tenantId, row.clientId, row.redirectUris, row.secretHash);
-                clients++;
+                if (await stores.Clients.Restore(row.tenantId, row.clientId, row.redirectUris, row.secretHash))
+                {
+                    clients++;
+                }
             }
         }
         return new TenantIdpImportReport(realmIds.size, accounts, clients);

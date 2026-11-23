@@ -7,11 +7,17 @@ export class IdpClientMigrations extends SqlMigrationModule
         'CREATE TABLE tenant_idp_clients (realm_id text NOT NULL, client_id text NOT NULL, redirect_uris jsonb NOT NULL, post_logout_redirect_uris jsonb NOT NULL, secret_hash text NOT NULL, updated_at timestamptz NOT NULL, PRIMARY KEY (realm_id, client_id))',
     ]);
 
+    /** `plexus` became a seeded client (E.s S1): a row registered under that id before is dropped (it could never be
+     *  found, listed or removed again). */
+    private static readonly V2 = new SqlMigration(2, [
+        "DELETE FROM tenant_idp_clients WHERE client_id = 'plexus'",
+    ]);
+
     public readonly Name = 'tenant_idp.clients';
 
     public Migrations(): readonly SqlMigration[]
     {
-        return [IdpClientMigrations.V1];
+        return [IdpClientMigrations.V1, IdpClientMigrations.V2];
     }
 }
 
@@ -99,10 +105,16 @@ export class IdpRefreshTokenMigrations extends SqlMigrationModule
         'CREATE INDEX tenant_idp_refresh_tokens_expires ON tenant_idp_refresh_tokens (family_expires_at)',
     ]);
 
+    /** The refresh tokens of a confidential client once registered as `plexus` end: the seeded public client must never
+     *  redeem a token issued to a secret-holding client (E.s S1). */
+    private static readonly V2 = new SqlMigration(2, [
+        "UPDATE tenant_idp_refresh_tokens SET revoked_at = now() WHERE client_id = 'plexus' AND revoked_at IS NULL",
+    ]);
+
     public readonly Name = 'tenant_idp.refresh_tokens';
 
     public Migrations(): readonly SqlMigration[]
     {
-        return [IdpRefreshTokenMigrations.V1];
+        return [IdpRefreshTokenMigrations.V1, IdpRefreshTokenMigrations.V2];
     }
 }

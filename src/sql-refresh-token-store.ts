@@ -34,11 +34,11 @@ export enum RefreshOutcome
 }
 
 /**
- * Rotating, revocable refresh tokens for every client, confidential or public (RFC 6749 §6, OAuth 2.0 Security BCP §4.14): each token
- * is random and stored as its digest; a refresh uses it up in one atomic update and issues the next token of the same
- * family; a token presented a second time revokes its family (reuse detection). A token lives for the realm's idle
- * lifetime, a family no longer than the maximum lifetime from the sign-in. Families end with their SSO session
- * (logout), with the account (password change, admin reset) or on revocation (RFC 7009).
+ * Rotating, revocable refresh tokens for every client, confidential or public (RFC 6749 §6, OAuth 2.0 Security BCP
+ * §4.14): each token is random and stored as its digest; a refresh uses it up in one atomic update and issues the next
+ * token of the same family; a token presented a second time revokes its family (reuse detection). A token lives for the
+ * realm's idle lifetime, a family no longer than the maximum lifetime from the sign-in. Families end with their SSO
+ * session (logout), with the account (password change, admin reset) or on revocation (RFC 7009).
  */
 export class SqlRefreshTokenStore
 {

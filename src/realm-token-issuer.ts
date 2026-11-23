@@ -18,8 +18,8 @@ export class IssuedTokens
 /**
  * Signs a realm's ID tokens: issuer, audience and authorized party (the client), subject (the realm account), issue,
  * expiry (the realm's ID token lifetime) and authentication times, the nonce of a code exchange (none on refresh, OIDC
- * Core 12.2), email, name, and the role claims `roles` / `app_roles` the realm's role mappings grant this sign-in, resolved
- * once per issue (so a mapping change reaches the next refresh) for both tokens. The access token is the
+ * Core 12.2), email, name, and the role claims `roles` / `app_roles` the realm's role mappings grant this sign-in,
+ * resolved once per issue (so a mapping change reaches the next refresh) for both tokens. The access token is the
  * `AccessTokenIssuer`'s: a JWT for a client with a resource audience, else opaque and not stored.
  */
 export class RealmTokenIssuer

@@ -33,13 +33,12 @@ export class IdpAdminStores
 }
 
 /**
- * The authenticated provisioning API of the realm sign-in service, under `/_admin/realms/<realm>`: ensure a realm,
- * seed an account, reset its password (ends its SSO sessions and refresh tokens), register and remove clients (never a
+ * The authenticated provisioning API of the realm sign-in service, under `/_admin/realms/<realm>`: ensure a realm, seed
+ * an account, reset its password (ends its SSO sessions and refresh tokens), register and remove clients (never a
  * seeded one: `SeededClients`), the role mappings (the assignable roles, list, add, remove; used by the tenant admin
- * console), the applications whose
- * roles the realm offers (a component descriptor each), and the realm's secrets (the `realm` store a configuration's
- * secret references name). The bearer token is verified before any routing or body inspection; nothing is logged and
- * no password, client secret, realm secret or admin token ever appears in a result.
+ * console), the applications whose roles the realm offers (a component descriptor each), and the realm's secrets (the
+ * `realm` store a configuration's secret references name). The bearer token is verified before any routing or body
+ * inspection; nothing is logged and no password, client secret, realm secret or admin token ever appears in a result.
  */
 export class IdpAdminEndpoint
 {

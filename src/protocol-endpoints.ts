@@ -14,8 +14,9 @@ import type { SqlSsoSessionStore } from './sql-sso-session-store.js';
  * the browser origin; token, keys and revocation on the origin the document was read from, which is the browser origin
  * or the internal one and nothing else, so a desktop or a relying party outside the cluster is named public endpoints
  * and an in-cluster client internal ones; `prompt_values_supported` advertising `create` only where the realm offers
- * sign-up; `none` among the token endpoint's auth methods for the seeded public client), the key set, and RP-initiated logout (ends the SSO session
- * and every refresh token issued under it, clears the cookie, and returns to a registered post-logout URI).
+ * sign-up; `none` among the token endpoint's auth methods for the seeded public client), the key set, and RP-initiated
+ * logout (ends the SSO session and every refresh token issued under it, clears the cookie, and returns to a registered
+ * post-logout URI).
  */
 export class ProtocolEndpoints
 {
