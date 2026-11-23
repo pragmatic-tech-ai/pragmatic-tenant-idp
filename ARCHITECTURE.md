@@ -41,10 +41,18 @@ routes; in a hive the host serves TLS itself (`AppHostConfig.Tls`, the `IdpTlsId
   (Google / Entra / generic OIDC / Pragmatic -> `UpstreamOidcSource`) and `IdentityPlatformSourceSettings` (->
   `IdentityPlatformSource`). `IdpRealm` holds the local accounts (SQL identity stores, password hashes in the realm's
   `SqlSecretStore` scope `tenant-idp/<realm>`), profiles and federated links (`SqlIdpFederatedAccounts`).
+- **Clients.** `OidcClient` (`clients/oidc-client.ts`) has a `ClientKind` (`confidential` | `public`) and an optional
+  resource audience. Registered clients (admin API, `SqlIdpClientStore`) are confidential; `SeededClients`
+  (`clients/seeded-clients.ts`) are the service's own, consulted before the store, never stored, reserved in the admin
+  API (POST 409, DELETE 405): today `plexus`, the Plexus desktop (public, `none` at the token endpoint, PKCE S256, the
+  loopback redirect `http://127.0.0.1/pragmatic-desktop/callback` on any port, audience `pragmatic-tenant-admin`).
 - **Sign-in and tokens.** `SignInEndpoints` (`authorize-endpoint.ts`), `SignInCompletion` (SSO session + single-use
-  code), `TokenEndpoint` / `RevocationEndpoint` (`token-endpoint.ts`: code + PKCE, rotating refresh tokens with reuse
-  detection), `ProtocolEndpoints` (discovery, JWKS, RP-initiated logout), `RealmTokenIssuer` (ID token claims incl.
-  `roles` / `app_roles` from `RealmRoleResolver` at every issue). Stores: `SqlIdpClientStore`, `SqlIdpRealmCatalogue`,
+  code), `TokenEndpoint` / `RevocationEndpoint` (`token-endpoint.ts`: client authentication by kind, code + PKCE,
+  rotating refresh tokens with reuse detection; revocation only of the client's own tokens), `ProtocolEndpoints`
+  (discovery, JWKS, RP-initiated logout; token, keys and revocation named on the origin the document was read from,
+  base or internal), `RealmTokenIssuer` (ID token claims incl. `roles` / `app_roles` from `RealmRoleResolver` at every
+  issue) and `AccessTokenIssuer` (`tokens/access-token-issuer.ts`: an RFC 9068 `at+jwt` for a client with a resource
+  audience, `sid` = the refresh family, lifetime `tokens.accessTokenLifetime` 1m-60m; opaque otherwise). Stores: `SqlIdpClientStore`, `SqlIdpRealmCatalogue`,
   `SqlIdpAccountProfiles`, `SqlAuthorizationCodeStore`, `SqlSsoSessionStore`, `SqlRefreshTokenStore` (migrations in
   `tenant-idp-migrations.ts`), app-host throttles (`IdpLoginThrottles`) and audit.
 - **Admin API.** `IdpAdminEndpoint`: realms, accounts, password reset, clients, role mappings and assignable roles
@@ -58,7 +66,9 @@ routes; in a hive the host serves TLS itself (`AppHostConfig.Tls`, the `IdpTlsId
   drives the app-host `OidcRelyingParty` through local and (fake) Identity Platform sign-ins. The store suites also run
   against a live Postgres when `PRAGMATIC_TEST_PG_URL` is set. `desktop-endpoint.test.ts` and
   `idp-admin-client.test.ts` hold the tenant plane's clients (`@pragmatic-tech-ai/pragmatic-tenant-plane`) to this
-  service. `component-golden.ts` / `component-sources.ts` are copies of pragmatic-server's component test support.
+  service. `plexus-client.test.ts`, `discovery-origin.test.ts` and `plexus-native-client-e2e.test.ts` hold the
+  native-client contract (E.s S1-S3; Plexus's side is its `realm-desktop-contract.test.ts`). `component-golden.ts` /
+  `component-sources.ts` are copies of pragmatic-server's component test support.
 - `tests/descriptor-golden.test.ts` (the release descriptor is the golden), `tests/singletons.test.ts` (one installed
   copy of todl-runtime, todl and mural).
 - `idp-login`: `npm --prefix idp-login test` (unit), `test:e2e` (Playwright, against a fake service).

@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { request } from 'node:https';
-import { createServer } from 'node:net';
+import { createServer, isIP } from 'node:net';
+import { checkServerIdentity } from 'node:tls';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ComponentDescriptor } from '@pragmatic-tech-ai/pragmatic-component';
@@ -80,7 +81,9 @@ export class IdpTestHttp
         }
         return new Promise<IdpTestReply>((resolve, reject) =>
         {
-            const req = request({ host: target.hostname, port: target.port, path: target.pathname + target.search, method, ca: this.ca, headers }, res =>
+            // The certificate is checked against the URL's host, never a Host header a test overrides.
+            const servername = isIP(target.hostname) === 0 ? target.hostname : undefined;
+            const req = request({ host: target.hostname, servername, port: target.port, path: target.pathname + target.search, method, ca: this.ca, headers, checkServerIdentity: (_host, cert) => checkServerIdentity(target.hostname, cert) }, res =>
             {
                 const chunks: Buffer[] = [];
                 res.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -101,6 +104,8 @@ export interface TenantIdpTestHostOptions
     /** An existing session (several hosts over one database); default a fresh pg-mem database. */
     Session?: ISqlSession;
     MasterKey?: Buffer;
+    /** Serve an internal origin too: `https://127.0.0.1:<port>` (the development certificate covers the address). */
+    Internal?: boolean;
 }
 
 /**
@@ -122,6 +127,8 @@ export class TenantIdpTestHost
         public readonly Http: IdpTestHttp,
         public readonly Session: ISqlSession,
         public readonly MasterKey: Buffer,
+        /** The internal origin when the host was started with one. */
+        public readonly InternalUrl: string | undefined,
         private readonly dir: string)
     {
     }
@@ -134,6 +141,7 @@ export class TenantIdpTestHost
         const material = IdpTlsMaterial.Load({ certFile: ca.certFile, keyFile: ca.keyFile });
         const port = await T.FreePort();
         const baseUrl = `https://${T.Localhost}:${port}`;
+        const internalUrl = options.Internal === true ? `https://${T.Loopback}:${port}` : undefined;
         const session = options.Session ?? new PgSession(SqlTestSessions.MemPool());
         const masterKey = options.MasterKey ?? Buffer.alloc(32, 7);
         const service = await TenantIdpService.Open({
@@ -141,6 +149,7 @@ export class TenantIdpTestHost
             SigningKey: await IdpSigningKey.LoadOrCreate(join(dir, 'signing-key.pem')),
             MasterKey: masterKey,
             BaseUrl: baseUrl,
+            InternalBaseUrl: internalUrl,
             Configurations: options.Configurations ?? [],
             Applications: options.Applications ?? [],
             LoginPage: IdpLoginPage.Placeholder(),
@@ -153,7 +162,7 @@ export class TenantIdpTestHost
         });
         await service.Listen(port, T.Loopback);
         const caPem = readFileSync(ca.caFile, 'utf8');
-        return new TenantIdpTestHost(service, baseUrl, caPem, new IdpTestHttp(caPem), session, masterKey, dir);
+        return new TenantIdpTestHost(service, baseUrl, caPem, new IdpTestHttp(caPem), session, masterKey, internalUrl, dir);
     }
 
     public Issuer(realm: string): string

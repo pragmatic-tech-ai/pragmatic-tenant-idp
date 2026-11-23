@@ -10,7 +10,7 @@ class TenantIdpComponentFixture
 {
     public static readonly Here = dirname(fileURLToPath(import.meta.url))
     public static readonly Golden = join(TenantIdpComponentFixture.Here, 'fixtures', 'pragmatic-tenant-idp.component.json')
-    public static readonly Digest = 'sha256:95021d7f98dcf5820ba1fe8a860cb76485a3d618fb77bff464174c4840227a67'
+    public static readonly Digest = 'sha256:0a1e97abda263a1286687f4556b30848192ee7d19ce378bd60f08ec536a96f90'
     public static readonly Readers = [['..', 'idp-main.ts'], ['..', 'tenant-idp-database.ts']].map(path => join(TenantIdpComponentFixture.Here, ...path))
     public static readonly Undeclared: readonly string[] = []
 }

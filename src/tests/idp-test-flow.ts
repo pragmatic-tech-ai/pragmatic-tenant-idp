@@ -18,7 +18,8 @@ export class IdpTestFlow
         private readonly host: TenantIdpTestHost,
         public readonly Realm: string,
         public readonly ClientId: string,
-        public readonly Secret: string,
+        /** undefined: a public client (`none`: no secret anywhere). */
+        public readonly Secret: string | undefined,
         public readonly RedirectUri: string)
     {
     }
@@ -78,23 +79,29 @@ export class IdpTestFlow
         return code;
     }
 
-    public Exchange(code: string, request: IdpTestRequest, secret: string = this.Secret): Promise<IdpTestReply>
+    public Exchange(code: string, request: IdpTestRequest, secret: string | undefined = this.Secret): Promise<IdpTestReply>
     {
         return this.host.Http.Send('POST', this.Issuer + RealmIssuer.TokenPath, {
-            Form: { grant_type: 'authorization_code', code, code_verifier: request.Verifier, redirect_uri: this.RedirectUri, client_id: this.ClientId, client_secret: secret },
+            Form: this.WithClient({ grant_type: 'authorization_code', code, code_verifier: request.Verifier, redirect_uri: this.RedirectUri }, secret),
         });
     }
 
     public Refresh(refreshToken: string): Promise<IdpTestReply>
     {
         return this.host.Http.Send('POST', this.Issuer + RealmIssuer.TokenPath, {
-            Form: { grant_type: 'refresh_token', refresh_token: refreshToken, client_id: this.ClientId, client_secret: this.Secret },
+            Form: this.WithClient({ grant_type: 'refresh_token', refresh_token: refreshToken }, this.Secret),
         });
     }
 
-    public Revoke(token: string): Promise<IdpTestReply>
+    public Revoke(token: string, clientId: string = this.ClientId, secret: string | undefined = this.Secret): Promise<IdpTestReply>
     {
-        return this.host.Http.Send('POST', this.Issuer + RealmIssuer.RevocationPath, { Form: { token, client_id: this.ClientId, client_secret: this.Secret } });
+        return this.host.Http.Send('POST', this.Issuer + RealmIssuer.RevocationPath, { Form: { token, token_type_hint: 'refresh_token', client_id: clientId, ...(secret === undefined ? {} : { client_secret: secret }) } });
+    }
+
+    /** The form with the client's id, and its secret unless it is a public client. */
+    private WithClient(form: Record<string, string>, secret: string | undefined): Record<string, string>
+    {
+        return secret === undefined ? { ...form, client_id: this.ClientId } : { ...form, client_id: this.ClientId, client_secret: secret };
     }
 
     public Logout(cookie: string | undefined, query: string = '', method: string = 'GET'): Promise<IdpTestReply>

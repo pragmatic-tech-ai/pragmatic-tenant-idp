@@ -18,7 +18,11 @@ export class ProtocolReply
     }
 }
 
-/** A confidential client's credentials: `client_secret_post` fields, or `client_secret_basic` (RFC 6749 §2.3.1). */
+/**
+ * A client's credentials: `client_secret_basic` (RFC 6749 §2.3.1), `client_secret_post` fields, or `none` (a public
+ * client: `client_id` in the form and no secret at all, RFC 8252 section 8.4). `Secret` is undefined only when the
+ * request carried no secret in any form; a Basic header always counts as one (a public client may present none).
+ */
 export class ClientCredentials
 {
     private static readonly ClientIdField = 'client_id';
@@ -31,7 +35,7 @@ export class ClientCredentials
     private static readonly Plus = /\+/g;
     private static readonly Space = ' ';
 
-    private constructor(public readonly ClientId: string, public readonly Secret: string)
+    private constructor(public readonly ClientId: string, public readonly Secret: string | undefined)
     {
     }
 
@@ -46,8 +50,10 @@ export class ClientCredentials
             {
                 return new ClientCredentials(C.FormDecode(decoded.slice(0, colon)), C.FormDecode(decoded.slice(colon + 1)));
             }
+            // An unreadable Basic header is still a secret presented: never the `none` method.
+            return new ClientCredentials(form.get(C.ClientIdField) ?? C.NoValue, form.get(C.ClientSecretField) ?? C.NoValue);
         }
-        return new ClientCredentials(form.get(C.ClientIdField) ?? C.NoValue, form.get(C.ClientSecretField) ?? C.NoValue);
+        return new ClientCredentials(form.get(C.ClientIdField) ?? C.NoValue, form.get(C.ClientSecretField) ?? undefined);
     }
 
     /** RFC 6749 §2.3.1: the Basic user and password are form-urlencoded. */
@@ -65,8 +71,9 @@ export class ClientCredentials
 }
 
 /**
- * `POST <issuer>/protocol/openid-connect/token` (form-encoded, RFC 6749 §3.2): the authorization code grant (single-use
- * code, PKCE S256, the client's secret, the same redirect URI; the account still active and its credentials unchanged
+ * `POST <issuer>/protocol/openid-connect/token` (form-encoded, RFC 6749 §3.2): the client authenticates by its kind (a
+ * confidential client's secret; a public client's `none`, `ClientCredentials`); the authorization code grant (single-use
+ * code, PKCE S256, the same redirect URI; the account still active and its credentials unchanged
  * since the sign-in) and the refresh token grant (a rotating token of the client: a refresh uses it up and answers the
  * next one; a reused token revokes its family; the account checked again and the roles resolved again). Every refusal
  * is `invalid_grant` / `invalid_client` / `unsupported_grant_type`, nothing more.
@@ -152,9 +159,10 @@ export class TokenEndpoint
         {
             return T.Fail(T.StatusBadRequest, T.InvalidGrant);
         }
-        const tokens = await this.issuer.Issue(realm, client.ClientId, grant.SignIn, grant.Nonce);
+        // The family first: its id is the access token's `sid`.
         const refresh = await this.refreshTokens.IssueFamily(realm.Id, client.ClientId, grant.SignIn, grant.SsoIdHash, realm.Settings.Tokens, T.FamilyLifetimeOf(realm, grant.SignIn));
         await this.codes.RecordFamily(code, refresh.FamilyId);
+        const tokens = await this.issuer.Issue(realm, client, grant.SignIn, grant.Nonce, refresh.FamilyId);
         return T.Tokens(tokens.IdToken, tokens.AccessToken, tokens.ExpiresIn, refresh.Token);
     }
 
@@ -186,7 +194,7 @@ export class TokenEndpoint
         }
         const old = grant.SignIn;
         const signIn = new RealmSignIn(old.AccountId, old.Source, old.Subject, old.Groups, profile.Email, profile.Name, old.EmailVerified, old.AuthenticatedAt);
-        const tokens = await this.issuer.Issue(realm, client.ClientId, signIn, undefined);
+        const tokens = await this.issuer.Issue(realm, client, signIn, undefined, grant.FamilyId);
         const next = await this.refreshTokens.Rotate(grant, signIn, realm.Settings.Tokens);
         if (next === undefined)
         {
@@ -221,8 +229,10 @@ export class TokenEndpoint
 }
 
 /**
- * `POST <issuer>/protocol/openid-connect/revoke` (form-encoded, RFC 7009): the client revokes one of its refresh
- * tokens, which ends the token's family. The answer is 200 whether or not the token was known; a bad client is 401.
+ * `POST <issuer>/protocol/openid-connect/revoke` (form-encoded, RFC 7009): the client (authenticated by its kind, a
+ * public one by `client_id` alone) revokes one of its refresh tokens, which ends the token's family. Another client's
+ * token is left alone (RFC 7009 §2.1: the token must belong to the client). The answer is 200 whether or not the token
+ * was known or the client's; a bad client is 401.
  */
 export class RevocationEndpoint
 {

@@ -11,7 +11,7 @@ export class TenantIdpComponent
 {
     public static readonly Name = 'pragmatic-tenant-idp';
     /** The descriptor version: this application's package version (the release test pins it to package.json). */
-    public static readonly Version = '0.1.0';
+    public static readonly Version = '0.2.0';
 
     private static readonly Core: OptionDeclaration = {
         name: O.Core,
@@ -39,7 +39,8 @@ export class TenantIdpComponent
         name: O.Tokens,
         description: 'Token and session lifetimes of the realm.',
         settings: [
-            { name: O.IdTokenLifetime, type: SettingType.Duration, default: O.DefaultIdTokenLifetime, description: 'How long an ID token (and its access token) is valid.' },
+            { name: O.IdTokenLifetime, type: SettingType.Duration, default: O.DefaultIdTokenLifetime, description: 'How long an ID token (and an opaque access token issued with it) is valid.' },
+            { name: O.AccessTokenLifetime, type: SettingType.Duration, default: O.DefaultAccessTokenLifetime, description: 'How long a JWT access token (a client with a resource audience, such as plexus) is valid: 1m to 60m.' },
             { name: O.RefreshTokenIdleLifetime, type: SettingType.Duration, default: O.DefaultRefreshTokenIdleLifetime, description: 'How long a refresh token is valid unused (each refresh rotates it).' },
             { name: O.RefreshTokenMaxLifetime, type: SettingType.Duration, default: O.DefaultRefreshTokenMaxLifetime, description: 'How long refreshing can go on after the sign-in.' },
             { name: O.SsoSessionLifetime, type: SettingType.Duration, default: O.DefaultSsoSessionLifetime, description: 'How long the login domain\'s single sign-on session re-authenticates silently.' },

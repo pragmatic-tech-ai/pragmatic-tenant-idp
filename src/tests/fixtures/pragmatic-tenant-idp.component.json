@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "component": "pragmatic-tenant-idp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "options": [
     {
       "name": "core",
@@ -130,7 +130,15 @@
           "required": false,
           "secret": false,
           "default": "5m",
-          "description": "How long an ID token (and its access token) is valid."
+          "description": "How long an ID token (and an opaque access token issued with it) is valid."
+        },
+        {
+          "name": "accessTokenLifetime",
+          "type": "duration",
+          "required": false,
+          "secret": false,
+          "default": "10m",
+          "description": "How long a JWT access token (a client with a resource audience, such as plexus) is valid: 1m to 60m."
         },
         {
           "name": "refreshTokenIdleLifetime",

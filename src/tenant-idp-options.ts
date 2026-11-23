@@ -22,6 +22,7 @@ export class TenantIdpOptions
     public static readonly Tokens = 'tokens';
 
     public static readonly IdTokenLifetime = 'idTokenLifetime';
+    public static readonly AccessTokenLifetime = 'accessTokenLifetime';
     public static readonly RefreshTokenIdleLifetime = 'refreshTokenIdleLifetime';
     public static readonly RefreshTokenMaxLifetime = 'refreshTokenMaxLifetime';
     public static readonly SsoSessionLifetime = 'ssoSessionLifetime';
@@ -47,6 +48,10 @@ export class TenantIdpOptions
     public static readonly AuthDomain = 'authDomain';
 
     public static readonly DefaultIdTokenLifetime = '5m';
+    public static readonly DefaultAccessTokenLifetime = '10m';
+    /** The bounds of `accessTokenLifetime`: a desktop renews well within the shortest, a relay outlives none of the longest. */
+    public static readonly MinAccessTokenLifetime = '1m';
+    public static readonly MaxAccessTokenLifetime = '60m';
     public static readonly DefaultRefreshTokenIdleLifetime = '7d';
     public static readonly DefaultRefreshTokenMaxLifetime = '30d';
     public static readonly DefaultSsoSessionLifetime = '12h';

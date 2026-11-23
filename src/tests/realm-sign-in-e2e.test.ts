@@ -124,3 +124,41 @@ describe('end to end: a relying party signs in through the realm sign-in service
         assert.equal(await rp.Refresh(client, refreshed!.RefreshToken!, accountId), null);
     });
 });
+
+describe('end to end through each origin: a relying party reading discovery on the public or the internal host', () =>
+{
+    const F = EndToEndFixture;
+    let host: TenantIdpTestHost;
+    let rp: OidcRelyingParty;
+    let browser: TestBrowser;
+
+    before(async () =>
+    {
+        host = await TenantIdpTestHost.Start({ Internal: true });
+        await host.Provision(F.Tenant, { email: F.Email, principalId: F.PrincipalId, password: F.Password }, { clientId: F.ClientId, secret: F.Secret, redirectUris: [F.Redirect] });
+        rp = new OidcRelyingParty(new InMemoryOidcFlowStateStore(), { Http: new CaTrustingHttpClient(host.Ca) });
+        browser = new TestBrowser(host);
+    });
+
+    after(async () =>
+    {
+        await host.Close();
+    });
+
+    for (const origin of ['public', 'internal'])
+    {
+        it(`signs in, refreshes and keeps one issuer with discovery read on the ${origin} host`, async () =>
+        {
+            const issuer = host.Issuer(F.Tenant);
+            const discoveryBase = origin === 'public' ? issuer : RealmIssuer.Of(host.InternalUrl!, F.Tenant);
+            const client: IOidcClientConfig = { Issuer: issuer, DiscoveryUrl: discoveryBase + RealmIssuer.DiscoveryPath, ClientId: F.ClientId, ClientSecret: F.Secret, RedirectUri: F.Redirect, Application: F.Application, RequiredClaims: ['iat', 'email'] };
+            const begun = await rp.Begin(client);
+            assert.ok(begun.Url.startsWith(issuer + RealmIssuer.AuthorizePath), 'the browser goes to the public origin');
+            const signedIn = await browser.SignIn(begun.Url, { method: 'password', email: F.Email, password: F.Password });
+            const outcome = await rp.CompleteWithTokens(client, signedIn.Code, signedIn.State);
+            assert.equal(outcome.Result.Subject, F.PrincipalId);
+            const refreshed = await rp.Refresh(client, outcome.Tokens!.RefreshToken!, F.PrincipalId);
+            assert.notEqual(refreshed, null);
+        });
+    }
+});

@@ -3,6 +3,7 @@ import { ComponentDescriptorCodec } from '@pragmatic-tech-ai/pragmatic-component
 import { ApplicationDeclaration, InvalidRealmRoleError, RealmRole, RoleMapping, RoleMember } from '@pragmatic-tech-ai/pragmatic-identity';
 import type { IApplicationCatalogue } from '@pragmatic-tech-ai/pragmatic-identity';
 import { RoleMappingError, type RoleMappingService } from '@pragmatic-tech-ai/pragmatic-identity-realm';
+import { SeededClients } from './clients/seeded-clients.js';
 import { ReservedRealmError, type IdpRealmSet } from './idp-realm-set.js';
 import type { SqlIdpClientStore } from './sql-idp-client-store.js';
 import type { SqlRefreshTokenStore } from './sql-refresh-token-store.js';
@@ -33,8 +34,9 @@ export class IdpAdminStores
 
 /**
  * The authenticated provisioning API of the realm sign-in service, under `/_admin/realms/<realm>`: ensure a realm,
- * seed an account, reset its password (ends its SSO sessions and refresh tokens), register and remove clients, the
- * role mappings (the assignable roles, list, add, remove; used by the tenant admin console), the applications whose
+ * seed an account, reset its password (ends its SSO sessions and refresh tokens), register and remove clients (never a
+ * seeded one: `SeededClients`), the role mappings (the assignable roles, list, add, remove; used by the tenant admin
+ * console), the applications whose
  * roles the realm offers (a component descriptor each), and the realm's secrets (the `realm` store a configuration's
  * secret references name). The bearer token is verified before any routing or body inspection; nothing is logged and
  * no password, client secret, realm secret or admin token ever appears in a result.
@@ -73,6 +75,9 @@ export class IdpAdminEndpoint
     private static readonly BadRequestStatus = 400;
     private static readonly UnauthorizedStatus = 401;
     private static readonly NotFoundStatus = 404;
+    private static readonly MethodNotAllowedStatus = 405;
+    private static readonly ConflictStatus = 409;
+    private static readonly ReservedClientCode = 'reserved_client';
     private static readonly UnauthorizedCode = 'unauthorized';
     private static readonly InvalidBodyCode = 'invalid_body';
     private static readonly InvalidRealmCode = 'invalid_realm';
@@ -308,6 +313,11 @@ export class IdpAdminEndpoint
         const secret = A.NonEmptyString(fields?.[A.SecretField]);
         const redirectUris = A.AbsoluteUrlList(fields?.[A.RedirectUrisField], false);
         const postLogout = fields?.[A.PostLogoutRedirectUrisField] === undefined ? [] : A.AbsoluteUrlList(fields[A.PostLogoutRedirectUrisField], true);
+        if (clientId !== undefined && SeededClients.IsSeeded(clientId))
+        {
+            // A seeded client (plexus) is the service's, the same in every realm: never registered over.
+            return A.Fail(A.ConflictStatus, A.ReservedClientCode);
+        }
         if (clientId === undefined || secret === undefined || redirectUris === undefined || postLogout === undefined)
         {
             return A.InvalidBody();
@@ -320,9 +330,14 @@ export class IdpAdminEndpoint
         return new AdminResult(A.OkStatus, { [A.ClientIdField]: clientId });
     }
 
-    /** Idempotent teardown: 200 whether or not the client still exists; its refresh tokens end with it. */
+    /** Idempotent teardown: 200 whether or not the client still exists; its refresh tokens end with it. A seeded client
+     *  cannot be removed (405). */
     private async DeleteClient(realmId: string, clientId: string): Promise<AdminResult>
     {
+        if (SeededClients.IsSeeded(clientId))
+        {
+            return IdpAdminEndpoint.Fail(IdpAdminEndpoint.MethodNotAllowedStatus, IdpAdminEndpoint.ReservedClientCode);
+        }
         await this.stores.Clients.Remove(realmId, clientId);
         await this.stores.RefreshTokens.RevokeClient(realmId, clientId);
         return new AdminResult(IdpAdminEndpoint.OkStatus, { [IdpAdminEndpoint.ClientIdField]: clientId });

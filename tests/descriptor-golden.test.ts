@@ -10,14 +10,14 @@ import { ComponentGolden } from '../src/tests/component-golden.js';
 
 /**
  * The descriptor the image build emits (`pragmatic-component-descriptors --components dist/release-components.js`) is
- * the one pragmatic-server pinned before the split: same JSON, same digest, so the platform release signs the same
- * component.
+ * the pinned golden: same JSON, same digest as the fixture, so the platform release signs exactly this component.
+ * (pragmatic-server's pin until 0.1.0; from 0.2.0 on, `tokens.accessTokenLifetime` is added, E.s S2.)
  */
 class DescriptorGoldenFixture
 {
     private static readonly Here = dirname(fileURLToPath(import.meta.url));
-    /** pragmatic-server's pin (src/idp/tests/tenant-idp-component.test.ts and admin/control-plane/descriptors/digests.json). */
-    public static readonly Digest = 'sha256:95021d7f98dcf5820ba1fe8a860cb76485a3d618fb77bff464174c4840227a67';
+    /** The digest of the fixture (also pinned by src/tests/tenant-idp-component.test.ts). */
+    public static readonly Digest = 'sha256:0a1e97abda263a1286687f4556b30848192ee7d19ce378bd60f08ec536a96f90';
     public static readonly Golden = join(DescriptorGoldenFixture.Here, '..', 'src', 'tests', 'fixtures', 'pragmatic-tenant-idp.component.json');
     private static readonly PackageJson = join(DescriptorGoldenFixture.Here, '..', 'package.json');
     private static readonly Utf8 = 'utf8';
@@ -30,7 +30,7 @@ class DescriptorGoldenFixture
 
 describe('the release descriptor', () =>
 {
-    it('is the pragmatic-server golden: JSON and digest', () =>
+    it('is the golden: JSON and digest', () =>
     {
         const F = DescriptorGoldenFixture;
         ComponentGolden.Check(Components.Of(ReleaseApp.TenantIdp), F.Golden, F.Digest);

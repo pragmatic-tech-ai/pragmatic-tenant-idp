@@ -1,6 +1,6 @@
 {
   "name": "@pragmatic-tech-ai/pragmatic-tenant-idp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "The realm sign-in service (pragmatic-tenant-idp): an OpenID provider per realm with its own Postgres, its sign-in app (idp-login) and its container image.",
   "license": "Apache-2.0",

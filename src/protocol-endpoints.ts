@@ -11,8 +11,10 @@ import type { SqlSsoSessionStore } from './sql-sso-session-store.js';
 
 /**
  * A realm's published protocol surface: the OIDC discovery document (issuer and authorize / end-session endpoints on
- * the browser origin; token, keys and revocation on the internal origin when one is set; `prompt_values_supported`
- * advertising `create` only where the realm offers sign-up), the key set, and RP-initiated logout (ends the SSO session
+ * the browser origin; token, keys and revocation on the origin the document was read from, which is the browser origin
+ * or the internal one and nothing else, so a desktop or a relying party outside the cluster is named public endpoints
+ * and an in-cluster client internal ones; `prompt_values_supported` advertising `create` only where the realm offers
+ * sign-up; `none` among the token endpoint's auth methods for the seeded public client), the key set, and RP-initiated logout (ends the SSO session
  * and every refresh token issued under it, clears the cookie, and returns to a registered post-logout URI).
  */
 export class ProtocolEndpoints
@@ -37,8 +39,8 @@ export class ProtocolEndpoints
     private static readonly SubjectTypes = ['public'];
     private static readonly SigningAlgs = ['RS256'];
     private static readonly ChallengeMethods = ['S256'];
-    private static readonly TokenAuthMethods = ['client_secret_post', 'client_secret_basic'];
-    private static readonly Scopes = ['openid', 'email', 'profile'];
+    private static readonly TokenAuthMethods = ['client_secret_post', 'client_secret_basic', 'none'];
+    private static readonly Scopes = ['openid', 'email', 'profile', 'offline_access'];
     private static readonly Claims = ['iss', 'sub', 'aud', 'azp', 'iat', 'exp', 'auth_time', 'nonce', 'email', 'email_verified', 'name', 'roles', 'app_roles'];
     private static readonly ClientIdParam = 'client_id';
     private static readonly PostLogoutParam = 'post_logout_redirect_uri';
@@ -65,6 +67,9 @@ export class ProtocolEndpoints
     private static readonly ConfirmPrefix = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign out</title></head><body><form method="post" action="';
     private static readonly ConfirmSuffix = '"><p>Sign out of this account?</p><button type="submit">Sign out</button></form></body></html>';
 
+    /** The internal origin's host (`host[:port]`, lower case), to recognise a document read there. */
+    private readonly internalHost: string | undefined;
+
     public constructor(
         private readonly realms: IdpRealmSet,
         private readonly clients: SqlIdpClientStore,
@@ -75,6 +80,7 @@ export class ProtocolEndpoints
         private readonly internalBaseUrl: string | undefined,
         private readonly secureCookie: boolean)
     {
+        this.internalHost = internalBaseUrl === undefined ? undefined : new URL(internalBaseUrl).host.toLowerCase();
     }
 
     public Register(routes: RouteTable): void
@@ -85,12 +91,18 @@ export class ProtocolEndpoints
         routes.Add({ Method: HttpMethod.Post, Pattern: RealmIssuer.Pattern(RealmIssuer.LogoutPath), Auth: RouteAuth.Public, Audited: false, Handler: ctx => this.Logout(ctx, true) });
     }
 
-    /** The realm's discovery document. */
-    public DiscoveryOf(realm: IdpRealm): Record<string, unknown>
+    /**
+     * The realm's discovery document as read on `requestHost` (the request's Host header, which the host allow-list
+     * already admitted): token, keys and revocation on the internal origin when the document was read there, else on
+     * the browser origin. Only the configured origins are ever named; the header only picks between them.
+     */
+    public DiscoveryOf(realm: IdpRealm, requestHost: string | undefined): Record<string, unknown>
     {
         const P = ProtocolEndpoints;
         const issuer = realm.Issuer;
-        const internal = this.internalBaseUrl === undefined ? issuer : RealmIssuer.Of(this.internalBaseUrl, realm.Id);
+        const endpoints = this.internalHost !== undefined && this.internalBaseUrl !== undefined && requestHost?.toLowerCase() === this.internalHost
+            ? RealmIssuer.Of(this.internalBaseUrl, realm.Id)
+            : issuer;
         const prompts = [AuthorizeRequest.PromptNone, AuthorizeRequest.PromptLogin];
         if (realm.Settings.OffersSignUp)
         {
@@ -99,9 +111,9 @@ export class ProtocolEndpoints
         return {
             [P.IssuerField]: issuer,
             [P.AuthorizationEndpointField]: issuer + RealmIssuer.AuthorizePath,
-            [P.TokenEndpointField]: internal + RealmIssuer.TokenPath,
-            [P.JwksUriField]: internal + RealmIssuer.CertsPath,
-            [P.RevocationEndpointField]: internal + RealmIssuer.RevocationPath,
+            [P.TokenEndpointField]: endpoints + RealmIssuer.TokenPath,
+            [P.JwksUriField]: endpoints + RealmIssuer.CertsPath,
+            [P.RevocationEndpointField]: endpoints + RealmIssuer.RevocationPath,
             [P.EndSessionEndpointField]: issuer + RealmIssuer.LogoutPath,
             [P.ResponseTypesField]: P.ResponseTypes,
             [P.GrantTypesField]: P.GrantTypes,
@@ -123,7 +135,7 @@ export class ProtocolEndpoints
             ctx.WriteJson(ProtocolEndpoints.StatusNotFound, { [ProtocolEndpoints.ErrorField]: ProtocolEndpoints.UnknownRealm });
             return;
         }
-        ctx.WriteJson(ProtocolEndpoints.StatusOk, this.DiscoveryOf(realm));
+        ctx.WriteJson(ProtocolEndpoints.StatusOk, this.DiscoveryOf(realm, ctx.Request.headers.host));
     }
 
     private async Certs(ctx: RequestContext): Promise<void>

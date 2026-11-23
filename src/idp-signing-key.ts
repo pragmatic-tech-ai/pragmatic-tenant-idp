@@ -66,10 +66,12 @@ export class IdpSigningKey
         return this.kid;
     }
 
-    public async Sign(claims: Record<string, unknown>): Promise<string>
+    /** Signs the claims; `type` sets the header's `typ` (an access token's `at+jwt`, RFC 9068), absent for an ID token. */
+    public async Sign(claims: Record<string, unknown>, type?: string): Promise<string>
     {
+        const header = type === undefined ? { alg: IdpSigningKey.Algorithm, kid: this.kid } : { alg: IdpSigningKey.Algorithm, kid: this.kid, typ: type };
         return new SignJWT(claims)
-            .setProtectedHeader({ alg: IdpSigningKey.Algorithm, kid: this.kid })
+            .setProtectedHeader(header)
             .sign(this.privateKey);
     }
 

@@ -29,7 +29,7 @@ class StoreFixture
 
     public static Policy(idleMs: number = StoreFixture.HourMs, maxMs: number = 24 * StoreFixture.HourMs): TokenPolicy
     {
-        return new TokenPolicy(5 * 60 * 1000, idleMs, maxMs, 8 * StoreFixture.HourMs);
+        return new TokenPolicy(5 * 60 * 1000, idleMs, maxMs, 8 * StoreFixture.HourMs, 10 * 60 * 1000);
     }
 }
 

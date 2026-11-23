@@ -21,17 +21,23 @@ export class TokenPolicy
 {
     private static readonly MillisPerSecond = 1000;
 
+    public static readonly MinAccessTokenMs = IdpDuration.Millis(O.MinAccessTokenLifetime);
+    public static readonly MaxAccessTokenMs = IdpDuration.Millis(O.MaxAccessTokenLifetime);
+
     public static readonly Default = new TokenPolicy(
         IdpDuration.Millis(O.DefaultIdTokenLifetime),
         IdpDuration.Millis(O.DefaultRefreshTokenIdleLifetime),
         IdpDuration.Millis(O.DefaultRefreshTokenMaxLifetime),
-        IdpDuration.Millis(O.DefaultSsoSessionLifetime));
+        IdpDuration.Millis(O.DefaultSsoSessionLifetime),
+        IdpDuration.Millis(O.DefaultAccessTokenLifetime));
 
     public constructor(
         public readonly IdTokenMs: number,
         public readonly RefreshIdleMs: number,
         public readonly RefreshMaxMs: number,
-        public readonly SsoSessionMs: number)
+        public readonly SsoSessionMs: number,
+        /** The lifetime of a JWT access token (clients with a resource audience); within the Min/Max bounds. */
+        public readonly AccessTokenMs: number)
     {
         Object.freeze(this);
     }
@@ -40,6 +46,18 @@ export class TokenPolicy
     public get IdTokenSeconds(): number
     {
         return Math.max(1, Math.floor(this.IdTokenMs / TokenPolicy.MillisPerSecond));
+    }
+
+    /** The JWT access token lifetime in whole seconds. */
+    public get AccessTokenSeconds(): number
+    {
+        return Math.max(1, Math.floor(this.AccessTokenMs / TokenPolicy.MillisPerSecond));
+    }
+
+    /** Whether an access token lifetime is within the bounds a realm may set. */
+    public static AccessTokenLifetimeAllowed(ms: number): boolean
+    {
+        return ms >= TokenPolicy.MinAccessTokenMs && ms <= TokenPolicy.MaxAccessTokenMs;
     }
 }
 
@@ -107,6 +125,7 @@ export class RealmSettings
     private static readonly UpstreamKinds: readonly RealmSourceKind[] = [RealmSourceKind.Google, RealmSourceKind.Entra, RealmSourceKind.Oidc, RealmSourceKind.Pragmatic];
     private static readonly CoreForbidden = 'the core option is the container\'s, not a realm\'s';
     private static readonly MissingValue = 'missing setting ';
+    private static readonly AccessBoundsMessage = ' must be between ' + O.MinAccessTokenLifetime + ' and ' + O.MaxAccessTokenLifetime;
     private static readonly Dot = '.';
     private static readonly MillisPerSecond = 1000;
 
@@ -134,13 +153,7 @@ export class RealmSettings
         {
             throw new RealmSettingsError(realmId, RealmSettings.CoreForbidden);
         }
-        const tokens = configuration.IsEnabled(O.Tokens)
-            ? new TokenPolicy(
-                reader.Duration(O.Tokens, O.IdTokenLifetime),
-                reader.Duration(O.Tokens, O.RefreshTokenIdleLifetime),
-                reader.Duration(O.Tokens, O.RefreshTokenMaxLifetime),
-                reader.Duration(O.Tokens, O.SsoSessionLifetime))
-            : TokenPolicy.Default;
+        const tokens = configuration.IsEnabled(O.Tokens) ? RealmSettings.TokensOf(realmId, reader) : TokenPolicy.Default;
         const local = configuration.IsEnabled(RealmSourceKind.Local)
             ? new LocalPolicy(reader.Integer(RealmSourceKind.Local, O.MaxAttempts), reader.Duration(RealmSourceKind.Local, O.Lockout))
             : undefined;
@@ -151,6 +164,21 @@ export class RealmSettings
             ? RealmSettings.IdentityPlatformOf(reader)
             : undefined;
         return new RealmSettings(realmId, displayName, tokens, local, upstreams, identityPlatform);
+    }
+
+    private static TokensOf(realmId: string, reader: RealmSettingsReader): TokenPolicy
+    {
+        const access = reader.Duration(O.Tokens, O.AccessTokenLifetime);
+        if (!TokenPolicy.AccessTokenLifetimeAllowed(access))
+        {
+            throw new RealmSettingsError(realmId, RealmSettings.Where(O.Tokens, O.AccessTokenLifetime) + RealmSettings.AccessBoundsMessage);
+        }
+        return new TokenPolicy(
+            reader.Duration(O.Tokens, O.IdTokenLifetime),
+            reader.Duration(O.Tokens, O.RefreshTokenIdleLifetime),
+            reader.Duration(O.Tokens, O.RefreshTokenMaxLifetime),
+            reader.Duration(O.Tokens, O.SsoSessionLifetime),
+            access);
     }
 
     /** The ids of the realm's sources (role mappings of any other source grant nothing). */
