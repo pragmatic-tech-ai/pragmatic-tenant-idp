@@ -4,7 +4,7 @@ import { ApplicationDeclaration, RealmIssuer } from '@pragmatic-tech-ai/pragmati
 import { RealmRoleResolver, RoleMappingService, TenantRoleRegistry } from '@pragmatic-tech-ai/pragmatic-identity-realm';
 import { RealmSecretsDirectory, SecretStoreDirectory } from '@pragmatic-tech-ai/pragmatic-configuration';
 import type { ISecretStore } from '@pragmatic-tech-ai/pragmatic-identity';
-import { RealmSecretName } from '@pragmatic-tech-ai/pragmatic-realm-adapters';
+import { RealmSecretName, WorkloadContext } from '@pragmatic-tech-ai/pragmatic-realm-adapters';
 import type { IRealmSecretsHomeStores } from './realm-secrets-import.js';
 import { SignInEndpoints } from './authorize-endpoint.js';
 import { FileSecretStore } from './file-secret-store.js';
@@ -23,18 +23,22 @@ import { RealmTokenIssuer } from './realm-token-issuer.js';
 import { SignInCompletion } from './sign-in-completion.js';
 import type { TenantIdpDatabase, TenantIdpStores } from './tenant-idp-database.js';
 import { RevocationEndpoint, TokenEndpoint } from './token-endpoint.js';
+import { TenantIdpComponent } from './tenant-idp-component.js';
 
 /**
  * A realm's secrets home as the configuration reader resolves references through it: `realm` = the realm secrets home
- * when the engine chart names the hive's realm secrets option (`RealmSecretsDirectory`, 2.5), else the realm's sealed
- * store in the service's database (as before 2.5); `file` = the secret files of the secrets directory (when one is set).
- * The admin API's realm secrets go to the same `realm` store.
+ * for the hive's own realm when the engine chart names the hive's realm secrets option (`RealmSecretsDirectory`, 2.5:
+ * the realm `PRAGMATIC_REALM_ID`, the tenant's, whose configuration the tenant admin console writes), else the realm's
+ * sealed store in the service's database (every other realm the service serves, and every realm before 2.5); `file` =
+ * the secret files of the secrets directory (when one is set). The admin API's realm secrets go to the same `realm`
+ * store. The hive realm's home is opened and verified once and kept.
  */
 export class TenantIdpSecretsHome implements IRealmSecretsHome, IRealmSecretsHomeStores
 {
     public static readonly RealmStore = 'realm';
     public static readonly FileStore = 'file';
-    public static readonly Component = 'pragmatic-tenant-idp';
+
+    private home: Promise<ISecretStore> | undefined;
 
     public constructor(
         private readonly database: TenantIdpDatabase,
@@ -44,23 +48,39 @@ export class TenantIdpSecretsHome implements IRealmSecretsHome, IRealmSecretsHom
     {
     }
 
-    /** Whether the realm secrets live in the realm secrets home (rather than the service's own sealed store). */
-    public get UsesRealmHome(): boolean
+    /** The hive's realm when its secrets live in the realm secrets home; undefined otherwise. */
+    public get HomeRealm(): string | undefined
     {
-        return RealmSecretsDirectory.Configured(this.env);
+        const realm = this.env[WorkloadContext.RealmVariable];
+        return RealmSecretsDirectory.Configured(this.env) && realm !== undefined && realm !== '' ? realm : undefined;
+    }
+
+    /** Whether `realm`'s secrets live in the realm secrets home (rather than the service's own sealed store). */
+    public UsesRealmHome(realm: string): boolean
+    {
+        return this.HomeRealm === realm;
     }
 
     /** The realm secrets home takes one lowercase segment; the service's own store any admin API secret name. */
-    public AcceptsName(name: string): boolean
+    public AcceptsName(name: string, realm: string): boolean
     {
-        return !this.UsesRealmHome || RealmSecretName.IsName(name);
+        return !this.UsesRealmHome(realm) || RealmSecretName.IsName(name);
     }
 
     /** The store a realm's `secret:realm/...` references resolve through. */
     public async RealmStore(realm: string): Promise<ISecretStore>
     {
-        const home = await RealmSecretsDirectory.RealmStoreFor(TenantIdpSecretsHome.Component, this.env, realm);
-        return home ?? await this.database.RealmSecrets(realm, this.masterKey);
+        if (!this.UsesRealmHome(realm)) return this.database.RealmSecrets(realm, this.masterKey);
+        if (this.home === undefined)
+        {
+            const opening = this.OpenHome();
+            this.home = opening;
+            opening.catch(() =>
+            {
+                if (this.home === opening) this.home = undefined;
+            });
+        }
+        return this.home;
     }
 
     public async DirectoryFor(realm: string): Promise<SecretStoreDirectory>
@@ -71,6 +91,11 @@ export class TenantIdpSecretsHome implements IRealmSecretsHome, IRealmSecretsHom
             directory.Add(TenantIdpSecretsHome.FileStore, new FileSecretStore(this.secretsDir));
         }
         return directory;
+    }
+
+    private async OpenHome(): Promise<ISecretStore>
+    {
+        return (await RealmSecretsDirectory.RealmStoreFor(TenantIdpComponent.Name, this.env))!;
     }
 }
 

@@ -13,7 +13,7 @@ import { TenantIdpComponent } from './tenant-idp-component.js';
 import { TenantIdpDatabase } from './tenant-idp-database.js';
 import { TenantIdpImport } from './tenant-idp-import.js';
 import { SqlIdpRealmCatalogue } from './sql-idp-realm-catalogue.js';
-import { RealmSecretsImport } from './realm-secrets-import.js';
+import { RealmConfigurationStart } from './realm-configuration-start.js';
 import { TenantIdpSecretsHome, TenantIdpService } from './tenant-idp-service.js';
 
 /**
@@ -128,18 +128,8 @@ export class IdpMain
         await TenantIdpImport.ImportIfPending(db, data, masterKey);
         const secretsDir = M.Optional(env[M.SecretsDirEnvVar]);
         const home = new TenantIdpSecretsHome(db, masterKey, secretsDir, env);
-        // With a realm secrets home (2.5), each realm's secrets move there once: copied before the configurations are
-        // read (so they resolve from the new home), retired from the service's own store only after they did.
-        const move = home.UsesRealmHome ? new RealmSecretsImport(db, masterKey, home) : undefined;
-        await move?.Copy((await (await SqlIdpRealmCatalogue.Open(db.Session)).Entries()).map(entry => entry.RealmId));
-        const reader = new RealmConfigurationReader(TenantIdpComponent.Descriptor(), home);
-        const configurations: RealmConfiguration[] = [...await reader.ReadDirectory(M.ConfigurationDirOf(env))];
-        const bootstrap = M.Optional(env[M.BootstrapRealmEnvVar]);
-        if (bootstrap !== undefined)
-        {
-            configurations.push(await reader.ReadBootstrap(bootstrap));
-        }
-        await move?.Retire();
+        // With a realm secrets home (2.5), the hive realm's secrets move there once, around the read of the configurations.
+        const configurations = await new RealmConfigurationStart(home, db, masterKey, line => console.error(line)).Read(M.ConfigurationDirOf(env), M.Optional(env[M.BootstrapRealmEnvVar]));
         const tlsOn = !M.IsOff(env[M.TlsEnvVar]);
         let tls: IdpTlsIdentity | undefined;
         if (tlsOn)

@@ -10,6 +10,7 @@ import type { SqlRefreshTokenStore } from './sql-refresh-token-store.js';
 import type { SqlSsoSessionStore } from './sql-sso-session-store.js';
 import type { IRealmSecretsHomeStores } from './realm-secrets-import.js';
 import { SecretsHomeUnavailableError } from '@pragmatic-tech-ai/pragmatic-realm-adapters';
+import { ConfigurationStartError, ConfigurationStartReason } from '@pragmatic-tech-ai/pragmatic-configuration';
 
 /** Status + JSON body produced by the admin endpoint. Never carries secrets. */
 export class AdminResult
@@ -414,7 +415,7 @@ export class IdpAdminEndpoint
     {
         const A = IdpAdminEndpoint;
         const value = A.NonEmptyString(A.AsRecord(body)?.[A.ValueField]);
-        if (!A.SecretName.test(name) || !this.stores.Secrets.AcceptsName(name) || value === undefined)
+        if (!A.SecretName.test(name) || !this.stores.Secrets.AcceptsName(name, realmId) || value === undefined)
         {
             return A.InvalidBody();
         }
@@ -424,7 +425,7 @@ export class IdpAdminEndpoint
     private async DeleteSecret(realmId: string, name: string): Promise<AdminResult>
     {
         const A = IdpAdminEndpoint;
-        if (!A.SecretName.test(name) || !this.stores.Secrets.AcceptsName(name))
+        if (!A.SecretName.test(name) || !this.stores.Secrets.AcceptsName(name, realmId))
         {
             return A.InvalidBody();
         }
@@ -440,7 +441,9 @@ export class IdpAdminEndpoint
         }
         catch (error)
         {
-            if (error instanceof SecretsHomeUnavailableError) return A.Fail(A.ServiceUnavailableStatus, A.SecretsHomeUnavailableCode);
+            // The home refused (a typed store error), or could not be opened and verified (a start reason).
+            const refusedStart = error instanceof ConfigurationStartError && error.Reason === ConfigurationStartReason.SecretsHomeUnavailable;
+            if (error instanceof SecretsHomeUnavailableError || refusedStart) return A.Fail(A.ServiceUnavailableStatus, A.SecretsHomeUnavailableCode);
             throw error;
         }
         return new AdminResult(A.OkStatus, { [A.NameField]: name });

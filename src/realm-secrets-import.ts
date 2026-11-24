@@ -39,8 +39,11 @@ export class RealmSecretsImportReport
         public readonly RealmId: string,
         /** Copied into the home (it held none under that name). */
         public readonly Copied: readonly string[],
-        /** Already in the home: the home's value is kept (the tenant admin console wrote it later). */
+        /** Already in the home with the same value. */
         public readonly Kept: readonly string[],
+        /** Already in the home with another value: the home's is kept (the tenant admin console wrote it later), and the
+         *  service's old value goes with Retire. */
+        public readonly Differing: readonly string[],
         /** Not realm secret names (a realm secrets home takes one lowercase segment): left in the service's store. */
         public readonly Skipped: readonly string[])
     {
@@ -52,8 +55,8 @@ export class RealmSecretsImportReport
 export interface IRealmSecretsHomeStores
 {
     RealmStore(realm: string): Promise<ISecretStore>;
-    /** Whether that store can hold a secret of this name. */
-    AcceptsName(name: string): boolean;
+    /** Whether `realm`'s store can hold a secret of this name. */
+    AcceptsName(name: string, realm: string): boolean;
 }
 
 /**
@@ -82,52 +85,57 @@ export class RealmSecretsImport
         {
             if (await imports.Completed(realm)) continue;
             const old = await this.database.RealmSecrets(realm, this.masterKey);
-            const target = await this.home.RealmStore(realm);
             const copied: string[] = [];
             const kept: string[] = [];
+            const differing: string[] = [];
             const skipped: string[] = [];
             const moved: string[] = [];
-            for (const name of await old.References())
+            const names = (await old.References()).filter(name => !name.startsWith(IdpRealm.SecretRefPrefix));
+            // The home is opened only with something to move: a realm with nothing in the old store never needs it here.
+            const target = names.some(name => RealmSecretName.IsName(name)) ? await this.home.RealmStore(realm) : undefined;
+            for (const name of names)
             {
-                if (name.startsWith(IdpRealm.SecretRefPrefix)) continue;
-                if (!RealmSecretName.IsName(name))
+                if (target === undefined || !RealmSecretName.IsName(name))
                 {
                     skipped.push(name);
                     continue;
                 }
                 const value = await old.Get(name);
                 if (value === null) continue;
-                if (await target.Get(name) === null)
+                const held = await target.Get(name);
+                if (held === null)
                 {
                     await target.Put(name, value);
                     copied.push(name);
                 }
                 else
                 {
-                    kept.push(name);
+                    (held === value ? kept : differing).push(name);
                 }
                 moved.push(name);
             }
             this.pending.set(realm, moved);
-            reports.push(new RealmSecretsImportReport(realm, copied, kept, skipped));
+            reports.push(new RealmSecretsImportReport(realm, copied, kept, differing, skipped));
         }
         return reports;
     }
 
     /** After the realms' configurations resolved from the home: deletes the copied names from the old store and records
-     *  each realm Copy handled as done. */
-    public async Retire(): Promise<void>
+     *  as done each realm Copy handled whose configuration was among those read (`resolved`); the others wait for a start
+     *  that reads theirs. The move is one way: taking the realm secrets option away later leaves those names in the home. */
+    public async Retire(resolved: readonly string[]): Promise<void>
     {
         const imports = await SqlRealmSecretsImports.Open(this.database.Session);
         for (const [realm, moved] of this.pending)
         {
+            if (!resolved.includes(realm)) continue;
             const old = await this.database.RealmSecrets(realm, this.masterKey);
             for (const name of moved)
             {
                 await old.Delete(name);
             }
             await imports.Complete(realm, moved.length);
+            this.pending.delete(realm);
         }
-        this.pending.clear();
     }
 }
