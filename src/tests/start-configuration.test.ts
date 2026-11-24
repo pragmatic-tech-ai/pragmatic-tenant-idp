@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SettingType } from '@pragmatic-tech-ai/pragmatic-component';
+import { ConfigurationValidator, SettingType } from '@pragmatic-tech-ai/pragmatic-component';
 import { AppliedConfiguration, ComponentStartConfiguration, type IStartProcess } from '@pragmatic-tech-ai/pragmatic-configuration';
 import { IdpMain } from '../idp-main.js';
 import { TenantIdpComponent } from '../tenant-idp-component.js';
@@ -51,18 +51,43 @@ class ExitRecorder implements IStartProcess
 
 describe('the realm sign-in service reads its core configuration at start', () =>
 {
-    const Core = { baseUrl: 'https://idp.configured.test', port: 7443, adminToken: 'secret:file/admin-tokens' };
-
-    it('a mounted configuration overrides the declared variable before the settings are read', async () =>
+    it('a mounted realm configuration overlays nothing: the container environment stays the deployment own', async () =>
     {
         await IdpStart.InFolder(async folder =>
         {
-            const env = IdpStart.Env(await IdpStart.Configuration(folder, Core));
-            await writeFile(join(folder, 'admin-tokens'), 'token-a\ntoken-b\n');
-            await ComponentStartConfiguration.Apply({ Declaration: TenantIdpComponent.Declaration, Env: env, Stores: ComponentStartConfiguration.Stores('', folder), SecretsDir: join(folder, 'run') });
-            assert.deepEqual([env.PRAGMATIC_IDP_BASE_URL, env.PRAGMATIC_IDP_PORT], ['https://idp.configured.test', '7443']);
-            assert.equal(env.PRAGMATIC_IDP_ADMIN_TOKEN_REF, undefined, 'the configured token wins over the deployment\'s ref');
-            assert.deepEqual(IdpMain.AdminTokensOf(env, join(folder, 'data')), ['token-a', 'token-b']);
+            const d = TenantIdpComponent.Descriptor();
+            const path = join(folder, 'configuration.json');
+            await writeFile(path, new AppliedConfiguration('acme', d.Name, 1, d.Version, d.ContentDigest(), { options: { local: { maxAttempts: 7 } } } as never).ToCanonicalJson());
+            const env = IdpStart.Env(path);
+            const before = { ...env };
+            const report = await ComponentStartConfiguration.Apply({ Declaration: TenantIdpComponent.Declaration, Env: env, Stores: ComponentStartConfiguration.Stores('', folder), SecretsDir: join(folder, 'run') });
+            assert.equal(report.Applied, true);
+            assert.deepEqual(env, before, 'the wiring stays the deployment own');
+        });
+    });
+
+    it('the staff realm document as applied on the live hive (google, local, tokens; no core) validates against this descriptor', async () =>
+    {
+        const live = {
+            options: {
+                google: { clientId: '182218337909-x.apps.googleusercontent.com', clientSecret: 'secret:realm/google-client-secret', hostedDomain: 'pragmatic-tech.ai' },
+                local: { lockout: '15m', maxAttempts: 5 },
+                tokens: { accessTokenLifetime: '10m', idTokenLifetime: '5m', refreshTokenIdleLifetime: '7d', refreshTokenMaxLifetime: '30d', ssoSessionLifetime: '12h' },
+            },
+        };
+        const result = new ConfigurationValidator(TenantIdpComponent.Descriptor()).Validate(live);
+        assert.equal(result.Valid, true, result.Errors.map(e => e.toString()).join('; '));
+    });
+
+    it('a configuration of an earlier version that set its wiring is refused by name, never overlaid', async () =>
+    {
+        await IdpStart.InFolder(async folder =>
+        {
+            const process = new ExitRecorder();
+            const env = IdpStart.Env(await IdpStart.Configuration(folder, { baseUrl: 'https://idp.configured.test' }));
+            await assert.rejects(ComponentStartConfiguration.ApplyOrExit({ Declaration: TenantIdpComponent.Declaration, Env: env }, process));
+            assert.equal(process.Code, 78);
+            assert.equal(env.PRAGMATIC_IDP_BASE_URL, 'https://idp.env.test');
         });
     });
 
@@ -82,7 +107,7 @@ describe('the realm sign-in service reads its core configuration at start', () =
         await IdpStart.InFolder(async folder =>
         {
             const process = new ExitRecorder();
-            const env = IdpStart.Env(await IdpStart.Configuration(folder, { ...Core, port: 'not-a-port' }));
+            const env = IdpStart.Env(await IdpStart.Configuration(folder, { secureCookie: false }));
             await assert.rejects(ComponentStartConfiguration.ApplyOrExit({ Declaration: TenantIdpComponent.Declaration, Env: env }, process));
             assert.equal(process.Code, 78);
         });
@@ -90,7 +115,7 @@ describe('the realm sign-in service reads its core configuration at start', () =
 
     it('every list setting reads the JSON array encoding', () =>
     {
-        const core = TenantIdpComponent.Declaration.options.find(o => o.name === 'core');
-        assert.deepEqual(core?.settings.filter(s => s.type === SettingType.List && s.source !== undefined), [], 'the core option has no list read from a variable; realm lists are read from the document');
+        const sourced = TenantIdpComponent.Declaration.options.flatMap(o => o.settings).filter(s => s.type === SettingType.List && s.source !== undefined);
+        assert.deepEqual(sourced, [], 'no list is read from a variable; realm lists are read from the document');
     });
 });

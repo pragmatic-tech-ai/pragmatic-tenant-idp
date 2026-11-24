@@ -63,7 +63,6 @@ class LiveRealm
     {
         return {
             options: {
-                core: { adminToken: 'secret:file/admin-token' },
                 google: { clientId: '182218337909-x.apps.googleusercontent.com', clientSecret: 'secret:realm/google-client-secret', hostedDomain: 'pragmatic-tech.ai' },
                 local: { lockout: '15m', maxAttempts: 5 },
                 tokens: { accessTokenLifetime: '10m', idTokenLifetime: '5m', refreshTokenIdleLifetime: '7d', refreshTokenMaxLifetime: '30d', ssoSessionLifetime: '12h' },
@@ -126,15 +125,15 @@ describe('the realm sign-in service starts on a realm configuration whose secret
             const process = new ExitRecorder();
             await IdpMain.StartConfiguration(env, process, ComponentStartConfiguration.Stores(TenantIdpComponent.Name, join(folder, 'component')), join(folder, 'run'));
             assert.equal(process.Code, undefined, 'the start was refused: ' + process.Text);
-            // The sourced core secret went to its file, behind its _FILE variable.
-            assert.equal(await readFile(env.PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE as string, 'utf8'), LiveRealm.AdminToken);
+            // Nothing of the container was overlaid; the admin token stays the deployment's (platform-owned).
+            assert.equal(env.PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE, undefined);
             // The realm reader reads the folder the service derives (the start step's mount by default), with the realm store
             // alone: it resolves the realm options' secrets, never the core one the start step resolved.
             assert.equal(IdpMain.ConfigurationDirOf({}), dirname(ConfigurationRuntimeReader.DefaultPath));
             const realms = await new RealmConfigurationReader(TenantIdpComponent.Descriptor(), LiveRealm.Secrets(env)).ReadDirectory(IdpMain.ConfigurationDirOf(env));
             assert.deepEqual(realms.map(r => r.RealmId), [LiveRealm.Realm]);
             assert.equal(realms[0].Configuration.Secret('google', 'clientSecret')?.Reveal(), LiveRealm.Secret);
-            assert.equal(realms[0].Configuration.Secret('core', 'adminToken'), undefined);
+            assert.equal(realms[0].Configuration.Secret('google', 'clientSecret')?.Reveal(), LiveRealm.Secret, 'the realm-store secret still resolves');
         }
         finally
         {

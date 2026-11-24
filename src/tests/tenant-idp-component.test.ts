@@ -10,10 +10,23 @@ class TenantIdpComponentFixture
 {
     public static readonly Here = dirname(fileURLToPath(import.meta.url))
     public static readonly Golden = join(TenantIdpComponentFixture.Here, 'fixtures', 'pragmatic-tenant-idp.component.json')
-    public static readonly Digest = 'sha256:77cd979c15f71decfebbf9c135b5d545b0255d07b5bed406d1e300678b7cc21f'
+    public static readonly Digest = 'sha256:9d465196907d63ee94de22b283f950f2a40d3a98293cc5d1aad10bbf98b764a3'
     public static readonly Readers = [['..', 'idp-main.ts'], ['..', 'tenant-idp-database.ts']].map(path => join(TenantIdpComponentFixture.Here, ...path))
-    /** The file variable the start step sets for the secret setting adminToken (source PRAGMATIC_IDP_ADMIN_TOKEN_REF). */
-    public static readonly Undeclared: readonly string[] = ['PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE', 'PRAGMATIC_IDP_DATABASE_URL_FILE']
+    /** Platform-owned: injected by the manifests the console and the platform render, never tenant-configurable, by reason. */
+    public static readonly PlatformOwned: Readonly<Record<string, readonly string[]>> = {
+        // Every realm's issuer is <baseUrl>/realms/<realm>; the console signs in against its injected browser URL.
+        'its origins (the issuer the console signs in against)': ['PRAGMATIC_IDP_BASE_URL', 'PRAGMATIC_IDP_INTERNAL_URL'],
+        'its listener (the Service, the Ingress and the probe are rendered against it)': ['PRAGMATIC_IDP_HOST', 'PRAGMATIC_IDP_PORT', 'PRAGMATIC_IDP_TLS', 'PRAGMATIC_IDP_TRUSTED_PROXY'],
+        'its folders (the mounts the manifests render)': [
+            'PRAGMATIC_IDP_DATA', 'PRAGMATIC_IDP_LOGIN_DIR', 'PRAGMATIC_IDP_CONFIGURATION_DIR', 'PRAGMATIC_IDP_BOOTSTRAP_REALM_FILE', 'PRAGMATIC_IDP_SECRETS_DIR', 'PRAGMATIC_IDP_APPLICATIONS_DIR',
+        ],
+        // The console's injected PRAGMATIC_IDP_ADMIN_TOKEN_FILE holds the token this must match.
+        'the admin token the console holds': ['PRAGMATIC_IDP_ADMIN_TOKEN_REF', 'PRAGMATIC_IDP_ADMIN_TOKEN_REF_FILE'],
+        'its database': ['PRAGMATIC_IDP_DATABASE_URL_FILE'],
+        // Always behind TLS: Secure is the only right value; off would only be a downgrade a tenant could choose.
+        'the Secure cookie flag': ['PRAGMATIC_IDP_SECURE_COOKIE'],
+    };
+    public static readonly Undeclared: readonly string[] = Object.values(TenantIdpComponentFixture.PlatformOwned).flat()
 }
 
 describe('TenantIdpComponent', () =>
@@ -28,11 +41,19 @@ describe('TenantIdpComponent', () =>
         ComponentSources.AssertCovers(TenantIdpComponent.Descriptor(), TenantIdpComponentFixture.Readers, TenantIdpComponentFixture.Undeclared)
     })
 
-    it('requires no core setting and holds no database URL: the manifests inject them', () =>
+    it('declares no core option: everything the container reads from its environment is the platform own', () =>
     {
-        const core = TenantIdpComponent.Descriptor().Options.find(o => o.Name === 'core')!
-        assert.deepEqual(core.Settings.filter(s => s.Required).map(s => s.Name), []);
-        assert.equal(core.Settings.some(s => s.Name === 'databaseUrl'), false);
+        assert.equal(TenantIdpComponent.Descriptor().Options.some(o => o.Name === 'core'), false);
+    });
+
+    it('declares none of its wiring (origins, listener, folders, admin token, cookies), so no configuration can lock the tenant out of sign-in', () =>
+    {
+        const descriptor = TenantIdpComponent.Descriptor();
+        const declared = ComponentSources.Declared(descriptor);
+        for (const [reason, variables] of Object.entries(TenantIdpComponentFixture.PlatformOwned))
+        {
+            assert.deepEqual(variables.filter(v => declared.includes(v)), [], reason);
+        }
     });
 
     it('is named for its release image', () =>
