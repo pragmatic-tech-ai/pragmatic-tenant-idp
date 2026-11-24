@@ -2,7 +2,7 @@ import { AppHost, AppHostConfig, AuditTrail, HttpMethod, ProblemMapper, RouteAut
 import type { ComponentDescriptor } from '@pragmatic-tech-ai/pragmatic-component';
 import { ApplicationDeclaration, RealmIssuer } from '@pragmatic-tech-ai/pragmatic-identity';
 import { RealmRoleResolver, RoleMappingService, TenantRoleRegistry } from '@pragmatic-tech-ai/pragmatic-identity-realm';
-import { RealmSecretsDirectory, SecretStoreDirectory } from '@pragmatic-tech-ai/pragmatic-configuration';
+import { ComponentStartConfiguration, ConfigurationStartError, ConfigurationStartReason, RealmSecretsDirectory, SecretStoreDirectory } from '@pragmatic-tech-ai/pragmatic-configuration';
 import type { ISecretStore } from '@pragmatic-tech-ai/pragmatic-identity';
 import { RealmSecretName, WorkloadContext } from '@pragmatic-tech-ai/pragmatic-realm-adapters';
 import type { IRealmSecretsHomeStores } from './realm-secrets-import.js';
@@ -35,8 +35,10 @@ import { TenantIdpComponent } from './tenant-idp-component.js';
  */
 export class TenantIdpSecretsHome implements IRealmSecretsHome, IRealmSecretsHomeStores
 {
-    public static readonly RealmStore = 'realm';
-    public static readonly FileStore = 'file';
+    public static readonly RealmStore = RealmSecretsDirectory.RealmStore;
+    public static readonly FileStore = ComponentStartConfiguration.FileStore;
+    private static readonly NoRealm = "the realm's secrets home is unavailable: the chart names a realm secrets option but not the hive's realm (";
+    private static readonly NoRealmEnd = ')';
 
     private home: Promise<ISecretStore> | undefined;
 
@@ -48,11 +50,15 @@ export class TenantIdpSecretsHome implements IRealmSecretsHome, IRealmSecretsHom
     {
     }
 
-    /** The hive's realm when its secrets live in the realm secrets home; undefined otherwise. */
+    /** The hive's realm when its secrets live in the realm secrets home; undefined otherwise. A realm secrets option
+     *  without the hive's realm refuses (`secrets-home-unavailable`): the service must not quietly keep its own store. */
     public get HomeRealm(): string | undefined
     {
+        const S = TenantIdpSecretsHome;
+        if (!RealmSecretsDirectory.Configured(this.env)) return undefined;
         const realm = this.env[WorkloadContext.RealmVariable];
-        return RealmSecretsDirectory.Configured(this.env) && realm !== undefined && realm !== '' ? realm : undefined;
+        if (realm === undefined || realm === '') throw new ConfigurationStartError(ConfigurationStartReason.SecretsHomeUnavailable, S.NoRealm + WorkloadContext.RealmVariable + S.NoRealmEnd);
+        return realm;
     }
 
     /** Whether `realm`'s secrets live in the realm secrets home (rather than the service's own sealed store). */

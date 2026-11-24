@@ -238,6 +238,9 @@ describe('the realm secrets home in the realm sign-in service', () =>
             const missing = new TenantIdpSecretsHome(db, HomeCase.Key, undefined, HomeCase.Gcp(join(folder, 'no-token')));
             await assert.rejects(missing.RealmStore(HomeCase.Realm), (error: Error) => error instanceof ConfigurationStartError && /\(gcp\) token-unreadable/.test(error.message), 'the gcp home was chosen and verified');
 
+            // An option without the hive's realm refuses rather than quietly keeping the service's store.
+            const noRealm = { ...HomeCase.Gcp(join(folder, 'token')), [WorkloadContext.RealmVariable]: '' };
+            assert.throws(() => new TenantIdpSecretsHome(db, HomeCase.Key, undefined, noRealm).HomeRealm, (error: Error) => error instanceof ConfigurationStartError && error.Reason === ConfigurationStartReason.SecretsHomeUnavailable);
             const token = join(folder, 'token');
             await writeFile(token, 'projected.jwt');
             const home = new TenantIdpSecretsHome(db, HomeCase.Key, undefined, HomeCase.Gcp(token));
