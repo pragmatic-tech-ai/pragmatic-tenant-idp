@@ -2,7 +2,10 @@ import { AppHost, AppHostConfig, AuditTrail, HttpMethod, ProblemMapper, RouteAut
 import type { ComponentDescriptor } from '@pragmatic-tech-ai/pragmatic-component';
 import { ApplicationDeclaration, RealmIssuer } from '@pragmatic-tech-ai/pragmatic-identity';
 import { RealmRoleResolver, RoleMappingService, TenantRoleRegistry } from '@pragmatic-tech-ai/pragmatic-identity-realm';
-import { SecretStoreDirectory } from '@pragmatic-tech-ai/pragmatic-configuration';
+import { RealmSecretsDirectory, SecretStoreDirectory } from '@pragmatic-tech-ai/pragmatic-configuration';
+import type { ISecretStore } from '@pragmatic-tech-ai/pragmatic-identity';
+import { RealmSecretName } from '@pragmatic-tech-ai/pragmatic-realm-adapters';
+import type { IRealmSecretsHomeStores } from './realm-secrets-import.js';
 import { SignInEndpoints } from './authorize-endpoint.js';
 import { FileSecretStore } from './file-secret-store.js';
 import { IdpAdminEndpoint, IdpAdminStores } from './idp-admin-endpoint.js';
@@ -22,21 +25,47 @@ import type { TenantIdpDatabase, TenantIdpStores } from './tenant-idp-database.j
 import { RevocationEndpoint, TokenEndpoint } from './token-endpoint.js';
 
 /**
- * A realm's secrets home as the configuration reader resolves references through it: `realm` = the realm's sealed
- * store in the service's database, `file` = the secret files of the secrets directory (when one is set).
+ * A realm's secrets home as the configuration reader resolves references through it: `realm` = the realm secrets home
+ * when the engine chart names the hive's realm secrets option (`RealmSecretsDirectory`, 2.5), else the realm's sealed
+ * store in the service's database (as before 2.5); `file` = the secret files of the secrets directory (when one is set).
+ * The admin API's realm secrets go to the same `realm` store.
  */
-export class TenantIdpSecretsHome implements IRealmSecretsHome
+export class TenantIdpSecretsHome implements IRealmSecretsHome, IRealmSecretsHomeStores
 {
     public static readonly RealmStore = 'realm';
     public static readonly FileStore = 'file';
+    public static readonly Component = 'pragmatic-tenant-idp';
 
-    public constructor(private readonly database: TenantIdpDatabase, private readonly masterKey: Buffer, private readonly secretsDir: string | undefined)
+    public constructor(
+        private readonly database: TenantIdpDatabase,
+        private readonly masterKey: Buffer,
+        private readonly secretsDir: string | undefined,
+        private readonly env: Readonly<Record<string, string | undefined>> = {})
     {
+    }
+
+    /** Whether the realm secrets live in the realm secrets home (rather than the service's own sealed store). */
+    public get UsesRealmHome(): boolean
+    {
+        return RealmSecretsDirectory.Configured(this.env);
+    }
+
+    /** The realm secrets home takes one lowercase segment; the service's own store any admin API secret name. */
+    public AcceptsName(name: string): boolean
+    {
+        return !this.UsesRealmHome || RealmSecretName.IsName(name);
+    }
+
+    /** The store a realm's `secret:realm/...` references resolve through. */
+    public async RealmStore(realm: string): Promise<ISecretStore>
+    {
+        const home = await RealmSecretsDirectory.RealmStoreFor(TenantIdpSecretsHome.Component, this.env, realm);
+        return home ?? await this.database.RealmSecrets(realm, this.masterKey);
     }
 
     public async DirectoryFor(realm: string): Promise<SecretStoreDirectory>
     {
-        const directory = new SecretStoreDirectory().Add(TenantIdpSecretsHome.RealmStore, await this.database.RealmSecrets(realm, this.masterKey));
+        const directory = new SecretStoreDirectory().Add(TenantIdpSecretsHome.RealmStore, await this.RealmStore(realm));
         if (this.secretsDir !== undefined)
         {
             directory.Add(TenantIdpSecretsHome.FileStore, new FileSecretStore(this.secretsDir));
@@ -65,6 +94,8 @@ export interface TenantIdpServiceOptions
     Tls?: IdpTlsIdentity;
     /** The admin API's tokens; absent: no admin API. */
     AdminTokens?: readonly string[];
+    /** Where the admin API writes realm secrets; absent: the realm's sealed store in the service's database. */
+    SecretsHome?: IRealmSecretsHomeStores;
     SourceClients?: IdpSourceClients;
     Now?: () => Date;
 }
@@ -131,7 +162,7 @@ export class TenantIdpService
         S.RegisterAssets(routes, options.LoginPage);
         if (options.AdminTokens !== undefined && options.AdminTokens.length > 0)
         {
-            const admin = new IdpAdminEndpoint(options.AdminTokens, new IdpAdminStores(realms, stores.Clients, stores.Sso, stores.RefreshTokens, roles, stores.Applications));
+            const admin = new IdpAdminEndpoint(options.AdminTokens, new IdpAdminStores(realms, stores.Clients, stores.Sso, stores.RefreshTokens, roles, stores.Applications, options.SecretsHome ?? new TenantIdpSecretsHome(options.Database, options.MasterKey, undefined)));
             S.RegisterAdmin(routes, admin);
         }
         const config = new AppHostConfig({

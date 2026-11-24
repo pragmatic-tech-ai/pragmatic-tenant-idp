@@ -118,3 +118,18 @@ export class IdpRefreshTokenMigrations extends SqlMigrationModule
         return [IdpRefreshTokenMigrations.V1, IdpRefreshTokenMigrations.V2];
     }
 }
+
+/** Realms whose configuration secrets moved from the service's own sealed store into the realm secrets home (2.5). */
+export class IdpRealmSecretsImportMigrations extends SqlMigrationModule
+{
+    private static readonly V1 = new SqlMigration(1, [
+        'CREATE TABLE tenant_idp_realm_secrets_imports (realm_id text PRIMARY KEY, moved integer NOT NULL, completed_at timestamptz NOT NULL)',
+    ]);
+
+    public readonly Name = 'tenant_idp.realm_secrets_imports';
+
+    public Migrations(): readonly SqlMigration[]
+    {
+        return [IdpRealmSecretsImportMigrations.V1];
+    }
+}

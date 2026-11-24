@@ -16,6 +16,7 @@ import { IdpTlsIdentity } from '../idp-tls-identity.js';
 import { RealmIssuer } from '@pragmatic-tech-ai/pragmatic-identity';
 import type { RealmConfiguration } from '../realm-configuration-reader.js';
 import { TenantIdpDatabase } from '../tenant-idp-database.js';
+import type { IRealmSecretsHomeStores } from '../realm-secrets-import.js';
 import { TenantIdpService } from '../tenant-idp-service.js';
 
 /** One HTTPS answer of the test client. */
@@ -104,6 +105,8 @@ export interface TenantIdpTestHostOptions
     /** An existing session (several hosts over one database); default a fresh pg-mem database. */
     Session?: ISqlSession;
     MasterKey?: Buffer;
+    /** Where the admin API writes realm secrets; default the service's own sealed store. */
+    SecretsHome?: IRealmSecretsHomeStores;
     /**
      * Serve an internal origin too: `https://localhost:<second port>`, a loopback port forwarded to the service (TLS passes
      * through untouched). The development certificate names `localhost` only (pragmatic-shared 0.18.14 on, never an IP), so
@@ -212,6 +215,7 @@ export class TenantIdpTestHost
             AdminTokens: [T.AdminToken],
             SourceClients: options.SourceClients,
             Now: options.Now,
+            SecretsHome: options.SecretsHome,
         });
         await service.Listen(port, T.Loopback);
         const caPem = readFileSync(ca.caFile, 'utf8');

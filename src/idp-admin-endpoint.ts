@@ -8,6 +8,8 @@ import { ReservedRealmError, type IdpRealmSet } from './idp-realm-set.js';
 import type { SqlIdpClientStore } from './sql-idp-client-store.js';
 import type { SqlRefreshTokenStore } from './sql-refresh-token-store.js';
 import type { SqlSsoSessionStore } from './sql-sso-session-store.js';
+import type { IRealmSecretsHomeStores } from './realm-secrets-import.js';
+import { SecretsHomeUnavailableError } from '@pragmatic-tech-ai/pragmatic-realm-adapters';
 
 /** Status + JSON body produced by the admin endpoint. Never carries secrets. */
 export class AdminResult
@@ -26,7 +28,9 @@ export class IdpAdminStores
         public readonly Sso: SqlSsoSessionStore,
         public readonly RefreshTokens: SqlRefreshTokenStore,
         public readonly Roles: RoleMappingService,
-        public readonly Applications: IApplicationCatalogue)
+        public readonly Applications: IApplicationCatalogue,
+        /** Where a realm's secrets are written: the realm secrets home, or the service's own sealed store. */
+        public readonly Secrets: IRealmSecretsHomeStores)
     {
         Object.freeze(this);
     }
@@ -84,6 +88,8 @@ export class IdpAdminEndpoint
     private static readonly UnknownRealmCode = 'unknown_realm';
     private static readonly UnknownAccountCode = 'unknown_account';
     private static readonly InvalidDescriptorCode = 'invalid_descriptor';
+    private static readonly ServiceUnavailableStatus = 503;
+    private static readonly SecretsHomeUnavailableCode = 'secrets_home_unavailable';
     private static readonly ErrorField = 'error';
     private static readonly RoleField = 'role';
     private static readonly MemberField = 'member';
@@ -401,27 +407,42 @@ export class IdpAdminEndpoint
         return new AdminResult(IdpAdminEndpoint.OkStatus, { [IdpAdminEndpoint.RemovedField]: await this.stores.Applications.Remove(realmId, name) });
     }
 
-    /** Stores one realm secret (`secret:realm/<name>` in the realm's configuration); the value is never echoed. */
+    /** Stores one realm secret (`secret:realm/<name>` in the realm's configuration) in the realm's secrets store (the
+     *  realm secrets home when the hive has one); the value is never echoed. A name the home cannot hold (it takes one
+     *  lowercase segment) is a 400, a home that does not answer a 503 with a fixed code, never the home's text. */
     private async PutSecret(realmId: string, name: string, body: unknown): Promise<AdminResult>
     {
         const A = IdpAdminEndpoint;
         const value = A.NonEmptyString(A.AsRecord(body)?.[A.ValueField]);
-        if (!A.SecretName.test(name) || value === undefined)
+        if (!A.SecretName.test(name) || !this.stores.Secrets.AcceptsName(name) || value === undefined)
         {
             return A.InvalidBody();
         }
-        await this.stores.Realms.For(realmId)!.Secrets.Put(name, value);
-        return new AdminResult(A.OkStatus, { [A.NameField]: name });
+        return A.OnHome(async () => (await this.stores.Secrets.RealmStore(realmId)).Put(name, value), name);
     }
 
     private async DeleteSecret(realmId: string, name: string): Promise<AdminResult>
     {
         const A = IdpAdminEndpoint;
-        if (!A.SecretName.test(name))
+        if (!A.SecretName.test(name) || !this.stores.Secrets.AcceptsName(name))
         {
             return A.InvalidBody();
         }
-        await this.stores.Realms.For(realmId)!.Secrets.Delete(name);
+        return A.OnHome(async () => (await this.stores.Secrets.RealmStore(realmId)).Delete(name), name);
+    }
+
+    private static async OnHome(work: () => Promise<void>, name: string): Promise<AdminResult>
+    {
+        const A = IdpAdminEndpoint;
+        try
+        {
+            await work();
+        }
+        catch (error)
+        {
+            if (error instanceof SecretsHomeUnavailableError) return A.Fail(A.ServiceUnavailableStatus, A.SecretsHomeUnavailableCode);
+            throw error;
+        }
         return new AdminResult(A.OkStatus, { [A.NameField]: name });
     }
 

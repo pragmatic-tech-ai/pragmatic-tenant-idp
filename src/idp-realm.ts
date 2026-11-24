@@ -36,7 +36,8 @@ export class AccountProfile
  */
 export class IdpRealm
 {
-    private static readonly SecretRefPrefix = 'idp-password/';
+    /** The prefix of every password hash's reference in the realm's sealed store. */
+    public static readonly SecretRefPrefix = 'idp-password/';
     private static readonly NoName = '';
 
     private readonly hasher = new Argon2PasswordHasher();
