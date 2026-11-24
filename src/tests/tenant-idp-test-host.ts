@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { request } from 'node:https';
-import { createServer, isIP } from 'node:net';
+import { connect, createServer, isIP, type Server, type Socket } from 'node:net';
 import { checkServerIdentity } from 'node:tls';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -104,8 +104,59 @@ export interface TenantIdpTestHostOptions
     /** An existing session (several hosts over one database); default a fresh pg-mem database. */
     Session?: ISqlSession;
     MasterKey?: Buffer;
-    /** Serve an internal origin too: `https://127.0.0.1:<port>` (the development certificate covers the address). */
+    /**
+     * Serve an internal origin too: `https://localhost:<second port>`, a loopback port forwarded to the service (TLS passes
+     * through untouched). The development certificate names `localhost` only (pragmatic-shared 0.18.14 on, never an IP), so
+     * the second origin differs by port, not by host.
+     */
     Internal?: boolean;
+}
+
+/** A loopback TCP port that pipes every connection to another, unchanged: a second origin of one listening service. */
+export class LoopbackForwarder
+{
+    private static readonly NoPortMessage = 'the loopback forwarder is not listening on a TCP port';
+
+    private constructor(private readonly server: Server, private readonly sockets: Set<Socket>, public readonly Port: number)
+    {
+    }
+
+    public static async Open(targetPort: number): Promise<LoopbackForwarder>
+    {
+        const sockets = new Set<Socket>();
+        const server = createServer(inbound =>
+        {
+            const outbound = connect(targetPort, TenantIdpTestHost.Loopback);
+            for (const socket of [inbound, outbound])
+            {
+                sockets.add(socket);
+                socket.on('close', () => sockets.delete(socket));
+                socket.on('error', () => { inbound.destroy(); outbound.destroy(); });
+            }
+            inbound.pipe(outbound).pipe(inbound);
+        });
+        await new Promise<void>((resolve, reject) =>
+        {
+            server.once('error', reject);
+            server.listen(0, TenantIdpTestHost.Loopback, () => resolve());
+        });
+        const address = server.address();
+        if (typeof address !== 'object' || address === null)
+        {
+            server.close();
+            throw new Error(LoopbackForwarder.NoPortMessage);
+        }
+        return new LoopbackForwarder(server, sockets, address.port);
+    }
+
+    public Close(): Promise<void>
+    {
+        for (const socket of this.sockets)
+        {
+            socket.destroy();
+        }
+        return new Promise<void>(resolve => this.server.close(() => resolve()));
+    }
 }
 
 /**
@@ -129,7 +180,8 @@ export class TenantIdpTestHost
         public readonly MasterKey: Buffer,
         /** The internal origin when the host was started with one. */
         public readonly InternalUrl: string | undefined,
-        private readonly dir: string)
+        private readonly dir: string,
+        private readonly forwarder: LoopbackForwarder | undefined)
     {
     }
 
@@ -141,7 +193,8 @@ export class TenantIdpTestHost
         const material = IdpTlsMaterial.Load({ certFile: ca.certFile, keyFile: ca.keyFile });
         const port = await T.FreePort();
         const baseUrl = `https://${T.Localhost}:${port}`;
-        const internalUrl = options.Internal === true ? `https://${T.Loopback}:${port}` : undefined;
+        const forwarder = options.Internal === true ? await LoopbackForwarder.Open(port) : undefined;
+        const internalUrl = forwarder === undefined ? undefined : `https://${T.Localhost}:${forwarder.Port}`;
         const session = options.Session ?? new PgSession(SqlTestSessions.MemPool());
         const masterKey = options.MasterKey ?? Buffer.alloc(32, 7);
         const service = await TenantIdpService.Open({
@@ -162,7 +215,7 @@ export class TenantIdpTestHost
         });
         await service.Listen(port, T.Loopback);
         const caPem = readFileSync(ca.caFile, 'utf8');
-        return new TenantIdpTestHost(service, baseUrl, caPem, new IdpTestHttp(caPem), session, masterKey, internalUrl, dir);
+        return new TenantIdpTestHost(service, baseUrl, caPem, new IdpTestHttp(caPem), session, masterKey, internalUrl, dir, forwarder);
     }
 
     public Issuer(realm: string): string
@@ -186,6 +239,7 @@ export class TenantIdpTestHost
 
     public async Close(): Promise<void>
     {
+        await this.forwarder?.Close();
         await this.Service.Close();
         rmSync(this.dir, { recursive: true, force: true });
     }

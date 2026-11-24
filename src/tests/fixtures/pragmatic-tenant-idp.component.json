@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "component": "pragmatic-tenant-idp",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "options": [
     {
       "name": "tokens",
